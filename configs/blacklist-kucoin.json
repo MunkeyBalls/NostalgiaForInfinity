@@ -14,7 +14,7 @@
             // Other Coins
             "(MEM|AMPL|OMG|XYM|POLX|CARR|SKEY|KLV|TLOS|KRL)/.*",
             // Personal grudges
-            "(CIX100|AERGO|HEGIC|TORN)/.*"
+            "(CIX100|AERGO|HEGIC|TORN|CWAR)/.*"
 
         ]
     }
