@@ -107,7 +107,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v10.9.98"
+        return "v10.9.106"
 
     # ROI table:
     minimal_roi = {
@@ -460,7 +460,7 @@ class NostalgiaForInfinityX(IStrategy):
         8: {
             "ema_fast"                  : False,
             "ema_fast_len"              : "26",
-            "ema_slow"                  : True,
+            "ema_slow"                  : False,
             "ema_slow_len"              : "12",
             "close_above_ema_fast"      : False,
             "close_above_ema_fast_len"  : "200",
@@ -2357,12 +2357,13 @@ class NostalgiaForInfinityX(IStrategy):
                 (current_profit < -0.025)
                 and (last_candle['close'] < last_candle['ema_200'])
                 and (last_candle['cmf'] < -0.0)
+                and (last_candle['ema_vwma_osc_96'] < -0.0)
                 and (((last_candle['ema_200'] - last_candle['close']) / last_candle['close']) < 0.004)
                 and last_candle['rsi_14'] > previous_candle_1['rsi_14']
                 and (last_candle['rsi_14'] > (last_candle['rsi_14_1h'] + 20.0))
                 and (last_candle['sma_200_dec_20'])
                 and (last_candle['sma_200_dec_24'])
-                and (current_time - timedelta(minutes=8200) > trade.open_date_utc)
+                and (current_time - timedelta(minutes=9200) > trade.open_date_utc)
                 # temporary
                 and (trade.open_date_utc + timedelta(minutes=13000) > current_time )
         ):
@@ -7947,6 +7948,7 @@ class NostalgiaForInfinityX(IStrategy):
                     and (last_candle['cmf'] < -0.25)
                     and (last_candle['cmf_15m'] < -0.25)
                     and (last_candle['cmf_1h'] < -0.0)
+                    and (last_candle['btc_not_downtrend_1h'] == False)
             ):
                 return True, 'sell_stoploss_p_48_1_1'
             elif (
@@ -7961,6 +7963,7 @@ class NostalgiaForInfinityX(IStrategy):
                     and (last_candle['cmf'] < -0.25)
                     and (last_candle['cmf_15m'] < -0.25)
                     and (last_candle['cmf_1h'] < -0.0)
+                    and (last_candle['btc_not_downtrend_1h'] == False)
             ):
                 return True, 'sell_stoploss_p_48_1_2'
 
@@ -8013,6 +8016,7 @@ class NostalgiaForInfinityX(IStrategy):
                     and (last_candle['cmf'] < -0.25)
                     and (last_candle['cmf_15m'] < -0.25)
                     and (last_candle['cmf_1h'] < -0.0)
+                    and (last_candle['btc_not_downtrend_1h'] == False)
             ):
                 return True, 'sell_stoploss_p_24_1_1'
 
@@ -9007,7 +9011,7 @@ class NostalgiaForInfinityX(IStrategy):
                     # Logic
                     item_buy_logic.append(dataframe['close'] < dataframe['sma_30'] * 0.927)
                     item_buy_logic.append(dataframe['ewo'] > 3.2)
-                    item_buy_logic.append(dataframe['rsi_14'] < 32.0)
+                    item_buy_logic.append(dataframe['rsi_14'] < 33.0)
                     item_buy_logic.append(dataframe['cti'] < -0.9)
                     item_buy_logic.append(dataframe['r_14'] < -97.0)
 
