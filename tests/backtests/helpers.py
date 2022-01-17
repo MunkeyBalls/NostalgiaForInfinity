@@ -86,6 +86,7 @@ class Backtest:
             f"--max-open-trades={max_open_trades}",
             f"--stake-amount={stake_amount}",
             "--config=user_data/data/pairlists.json",
+            "--no-cache",
         ]
         if pairlist is None:
             cmdline.append(f"--config={exchange_config}")
@@ -110,7 +111,9 @@ class Backtest:
         else:
             log.debug("Command Result:\n%s", ret)
         assert ret.exitcode == 0
-        generated_results_file = list(tmp_path.rglob("backtest-results-*.json"))[0]
+        generated_results_file = list(
+            f for f in tmp_path.rglob("backtest-results-*.json") if "meta" not in str(f)
+        )[0]
         generated_json_ci_results_artifact_path = None
         if self.request.config.option.artifacts_path:
             generated_json_results_artifact_path = (
