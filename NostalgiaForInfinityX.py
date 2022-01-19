@@ -98,7 +98,7 @@ else:
 ##  Binance: https://accounts.binance.com/en/register?ref=EAZC47FM (5% discount on trading fees)         ##
 ##  Kucoin: https://www.kucoin.com/r/QBSSSPYV (5% discount on trading fees)                              ##
 ##  Gate.io: https://www.gate.io/signup/8054544 (10% discount on trading fees)                           ##
-##  OKEx: https://www.okex.com/join/11749725760 (5% discount on trading fees)                            ##
+##  OKX: https://www.okx.com/join/11749725760 (5% discount on trading fees)                              ##
 ##  Huobi: https://www.huobi.com/en-us/topic/double-reward/?invite_code=ubpt2223                         ##
 ###########################################################################################################
 
@@ -107,7 +107,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.7"
+        return "v11.0.13"
 
     # ROI table:
     minimal_roi = {
@@ -2291,6 +2291,7 @@ class NostalgiaForInfinityX(IStrategy):
         # simple TA checks, to assure that the price is not dropping rapidly
         if (
                 (last_candle['crsi_1h'] < 12.0)
+                # drop in the last candle
                 or (last_candle['tpct_change_0'] > 0.018)
         ):
             return None
@@ -9344,9 +9345,9 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['ema_20_1h'] > dataframe['ema_25_1h'])
 
                     # Logic
-                    item_buy_logic.append(dataframe['close'] < dataframe['sma_15'] * 0.93)
+                    item_buy_logic.append(dataframe['close'] < dataframe['sma_15'] * 0.936)
                     item_buy_logic.append(dataframe['cti'] < -0.9)
-                    item_buy_logic.append(dataframe['r_14'] < -94.0)
+                    item_buy_logic.append(dataframe['r_14'] < -96.0)
 
                 # Condition #27 - Semi swing. Local deep. Uptrend.
                 elif index == 27:
@@ -9868,6 +9869,10 @@ class NostalgiaForInfinityX(IStrategy):
             if slippage < 0.038:
                 return True
             else:
+                log.warning(
+                    "Cancelling buy for %s due to slippage %s",
+                    pair, slippage
+                )
                 return False
 
         return True
