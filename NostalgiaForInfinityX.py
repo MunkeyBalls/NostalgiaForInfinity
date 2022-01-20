@@ -107,7 +107,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.13"
+        return "v11.0.24"
 
     # ROI table:
     minimal_roi = {
@@ -1019,7 +1019,7 @@ class NostalgiaForInfinityX(IStrategy):
             "btc_1h_not_downtrend"      : False,
             "close_over_pivot_type"     : "none", # pivot, sup1, sup2, sup3, res1, res2, res3
             "close_over_pivot_offset"   : 1.0,
-            "close_under_pivot_type"    : "none", # pivot, sup1, sup2, sup3, res1, res2, res3
+            "close_under_pivot_type"    : "res2", # pivot, sup1, sup2, sup3, res1, res2, res3
             "close_under_pivot_offset"  : 1.0
         },
         28: {
@@ -2303,10 +2303,10 @@ class NostalgiaForInfinityX(IStrategy):
             if (current_profit > -0.03):
                 return None
         elif (count_of_buys == 2):
-            if (current_profit > -0.08):
+            if (current_profit > -0.08) or (last_candle['close'] < previous_candle['close']):
                 return None
         elif (count_of_buys == 3):
-            if (current_profit > -0.1):
+            if (current_profit > -0.1) or (last_candle['tpct_change_12'] > 0.05) or (last_candle['close'] < previous_candle['close']):
                 return None
 
         # Maximum 3 rebuys. Half the stake of the original.
@@ -2315,7 +2315,7 @@ class NostalgiaForInfinityX(IStrategy):
                 # This returns first order stake size
                 stake_amount = filled_buys[0].cost
                 # This then calculates current safety order size
-                stake_amount = stake_amount / 2.0
+                stake_amount = stake_amount * (0.5 + (count_of_buys * 0.005))
                 return stake_amount
             except Exception as exception:
                 return None
@@ -8379,6 +8379,14 @@ class NostalgiaForInfinityX(IStrategy):
         max_profit = ((trade.max_rate - trade.open_rate) / trade.open_rate)
         max_loss = ((trade.open_rate - trade.min_rate) / trade.min_rate)
 
+        if hasattr(trade, 'select_filled_orders'):
+            filled_buys = trade.select_filled_orders('buy')
+            count_of_buys = len(filled_buys)
+            if count_of_buys > 0:
+                initial_buy = filled_buys[0]
+                max_profit = ((trade.max_rate - initial_buy.average) / initial_buy.average)
+                max_loss = ((initial_buy.average - trade.min_rate) / trade.min_rate)
+
         # Long mode
         if all(c in ['31', '32', '33', '34', '35', '36'] for c in buy_tags):
             sell, signal_name = self.sell_long_mode(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
@@ -9354,10 +9362,10 @@ class NostalgiaForInfinityX(IStrategy):
                     # Non-Standard protections
 
                     # Logic
-                    item_buy_logic.append(dataframe['close'] < dataframe['sma_75'] * 0.934)
-                    item_buy_logic.append(dataframe['ewo'] > 6.4)
-                    item_buy_logic.append(dataframe['rsi_14'] < 32.0)
-                    item_buy_logic.append(dataframe['cti'] < -0.8)
+                    item_buy_logic.append(dataframe['close'] < dataframe['sma_75'] * 0.938)
+                    item_buy_logic.append(dataframe['ewo'] > 2.4)
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
+                    item_buy_logic.append(dataframe['cti'] < -0.9)
                     item_buy_logic.append(dataframe['r_14'] < -96.0)
                     item_buy_logic.append(dataframe['r_480_1h'] < -5.0)
 
@@ -9367,10 +9375,10 @@ class NostalgiaForInfinityX(IStrategy):
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < dataframe['sma_75'] * 0.96)
-                    item_buy_logic.append(dataframe['ewo'] < -8.0)
+                    item_buy_logic.append(dataframe['ewo'] < -6.2)
                     item_buy_logic.append(dataframe['cti'] < -0.9)
                     item_buy_logic.append(dataframe['r_14'] < -97.0)
-                    item_buy_logic.append(dataframe['crsi_1h'] > 14.0)
+                    item_buy_logic.append(dataframe['crsi_1h'] > 18.0)
 
                 # Condition #29 - Semi swing. Downtrend. Local deep.
                 elif index == 29:
