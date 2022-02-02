@@ -5,6 +5,7 @@ import rapidjson
 import freqtrade.vendor.qtpylib.indicators as qtpylib
 import numpy as np
 import talib.abstract as ta
+import pandas as pd
 from freqtrade.strategy.interface import IStrategy
 from freqtrade.strategy import merge_informative_pair, timeframe_to_minutes
 from freqtrade.exchange import timeframe_to_prev_date
@@ -17,9 +18,11 @@ from datetime import datetime, timedelta
 from technical.util import resample_to_interval, resampled_merge
 from technical.indicators import RMI, zema, VIDYA, ichimoku
 import time
+import warnings
 
 log = logging.getLogger(__name__)
 #log.setLevel(logging.DEBUG)
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 
 try:
@@ -107,7 +110,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.146"
+        return "v11.0.154"
 
     # ROI table:
     minimal_roi = {
@@ -2452,36 +2455,36 @@ class NostalgiaForInfinityX(IStrategy):
         ):
             return True, 'sell_stoploss_u_e_1'
 
-        # if (
-        #         (current_profit < -0.12)
-        #         and (last_candle['close'] < last_candle['ema_200'])
-        #         and (last_candle['close'] < (last_candle['ema_200'] - last_candle['atr']))
-        #         and (last_candle['sma_200_dec_20'])
-        #         # temporary
-        #         and (trade.open_date_utc + timedelta(minutes=3000) > current_time)
-        # ):
-        #     return True, 'sell_stoploss_doom'
-
         if (
-                (current_time - timedelta(minutes=30) > trade.open_date_utc)
-                and (trade.open_date_utc + timedelta(minutes=18000) > current_time)
+                (current_profit < -0.26)
                 and (last_candle['close'] < last_candle['ema_200'])
+                and (last_candle['close'] < (last_candle['ema_200'] - last_candle['atr']))
+                and (last_candle['sma_200_dec_20'])
+                # temporary
+                and (trade.open_date_utc + timedelta(minutes=5000) > current_time)
         ):
-            if (-0.12 <= current_profit < -0.08):
-                if (last_candle['close'] < last_candle['atr_high_thresh_1']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_1']) and (last_candle['cmf'] < -0.0):
-                    return True, 'sell_stoploss_atr_1'
-            elif (-0.16 <= current_profit < -0.12):
-                if (last_candle['close'] < last_candle['atr_high_thresh_2']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_2']) and (last_candle['cmf'] < -0.0):
-                    return True, 'sell_stoploss_atr_2'
-            elif (-0.2 <= current_profit < -0.16):
-                if (last_candle['close'] < last_candle['atr_high_thresh_3']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_3']) and (last_candle['cmf'] < -0.0):
-                    return True, 'sell_stoploss_atr_3'
-            elif (-0.3 <= current_profit < -0.2):
-                if (last_candle['close'] < last_candle['atr_high_thresh_4']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_4']) and (last_candle['cmf'] < -0.0):
-                    return True, 'sell_stoploss_atr_4'
-            elif (current_profit < -0.3):
-                if (last_candle['close'] < last_candle['atr_high_thresh_5']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_5']) and (last_candle['cmf'] < -0.0):
-                    return True, 'sell_stoploss_atr_5'
+            return True, 'sell_stoploss_doom'
+
+        # if (
+        #         (current_time - timedelta(minutes=30) > trade.open_date_utc)
+        #         and (trade.open_date_utc + timedelta(minutes=18000) > current_time)
+        #         and (last_candle['close'] < last_candle['ema_200'])
+        # ):
+        #     if (-0.12 <= current_profit < -0.08):
+        #         if (last_candle['close'] < last_candle['atr_high_thresh_1']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_1']) and (last_candle['cmf'] < -0.0):
+        #             return True, 'sell_stoploss_atr_1'
+        #     elif (-0.16 <= current_profit < -0.12):
+        #         if (last_candle['close'] < last_candle['atr_high_thresh_2']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_2']) and (last_candle['cmf'] < -0.0):
+        #             return True, 'sell_stoploss_atr_2'
+        #     elif (-0.2 <= current_profit < -0.16):
+        #         if (last_candle['close'] < last_candle['atr_high_thresh_3']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_3']) and (last_candle['cmf'] < -0.0):
+        #             return True, 'sell_stoploss_atr_3'
+        #     elif (-0.3 <= current_profit < -0.2):
+        #         if (last_candle['close'] < last_candle['atr_high_thresh_4']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_4']) and (last_candle['cmf'] < -0.0):
+        #             return True, 'sell_stoploss_atr_4'
+        #     elif (current_profit < -0.3):
+        #         if (last_candle['close'] < last_candle['atr_high_thresh_5']) and (previous_candle_1['close'] > previous_candle_1['atr_high_thresh_5']) and (last_candle['cmf'] < -0.0):
+        #             return True, 'sell_stoploss_atr_5'
 
         return False, None
 
@@ -9721,7 +9724,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.92))
 
                     # Logic
-                    item_buy_logic.append(dataframe['ewo_15m'] > 5.5)
+                    item_buy_logic.append(dataframe['ewo_15m'] > 5.4)
                     item_buy_logic.append(dataframe['rsi_14_15m'] < 34.0)
                     item_buy_logic.append(dataframe['cti_15m'] < -0.9)
                     item_buy_logic.append(dataframe['r_14_15m'] < -90.0)
@@ -9764,11 +9767,11 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['ema_50_15m'] > dataframe['ema_200_1h'])
 
                     # Logic
-                    item_buy_logic.append(dataframe['close_15m'] < dataframe['ema_20_15m'] * 0.934)
-                    item_buy_logic.append(dataframe['ewo_15m'] > 3.6)
+                    item_buy_logic.append(dataframe['ewo_15m'] > 3.4)
                     item_buy_logic.append(dataframe['cci_15m'] < -190.0)
-                    item_buy_logic.append(dataframe['r_14_15m'] < -97.0)
+                    item_buy_logic.append(dataframe['r_14_15m'] < -96.0)
                     item_buy_logic.append((dataframe['rsi_14_1h'] + dataframe['rsi_14_15m']) < 70.0)
+                    item_buy_logic.append(dataframe['crsi_1h'] > 18.0)
 
                 # Condition #46 - 15m. Semi swing. 1h uptrend.
                 elif index == 46:
