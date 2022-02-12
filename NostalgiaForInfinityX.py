@@ -110,7 +110,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.212"
+        return "v11.0.225"
 
     # ROI table:
     minimal_roi = {
@@ -1434,7 +1434,7 @@ class NostalgiaForInfinityX(IStrategy):
             "safe_dips_threshold_0"     : 0.032,
             "safe_dips_threshold_2"     : 0.09,
             "safe_dips_threshold_12"    : None,
-            "safe_dips_threshold_144"   : 0.4,
+            "safe_dips_threshold_144"   : 0.2,
             "safe_pump_6h_threshold"    : 0.5,
             "safe_pump_12h_threshold"   : None,
             "safe_pump_24h_threshold"   : None,
@@ -1539,8 +1539,8 @@ class NostalgiaForInfinityX(IStrategy):
             "close_above_ema_fast_len"  : "200",
             "close_above_ema_slow"      : False,
             "close_above_ema_slow_len"  : "200",
-            "sma200_rising"             : False,
-            "sma200_rising_val"         : "42",
+            "sma200_rising"             : True,
+            "sma200_rising_val"         : "48",
             "sma200_1h_rising"          : False,
             "sma200_1h_rising_val"      : "24",
             "safe_dips_threshold_0"     : 0.032,
@@ -1742,7 +1742,7 @@ class NostalgiaForInfinityX(IStrategy):
             "safe_dips_threshold_0"     : 0.032,
             "safe_dips_threshold_2"     : 0.09,
             "safe_dips_threshold_12"    : 0.16,
-            "safe_dips_threshold_144"   : None,
+            "safe_dips_threshold_144"   : 0.23,
             "safe_pump_6h_threshold"    : 0.5,
             "safe_pump_12h_threshold"   : None,
             "safe_pump_24h_threshold"   : None,
@@ -2464,14 +2464,17 @@ class NostalgiaForInfinityX(IStrategy):
             return True, 'sell_stoploss_u_e_1'
 
         if (
-                (current_profit < -0.35)
+                (current_profit < -0.025)
                 and (last_candle['close'] < last_candle['ema_200'])
-                and (last_candle['close'] < (last_candle['ema_200'] - last_candle['atr']))
-                and (last_candle['sma_200_dec_20'])
+                and (last_candle['cmf'] < -0.0)
+                and (((last_candle['ema_200'] - last_candle['close']) / last_candle['close']) < 0.024)
+                and last_candle['rsi_14'] > previous_candle_1['rsi_14']
+                and (last_candle['rsi_14'] > (last_candle['rsi_14_1h'] + 16.0))
+                and (current_time - timedelta(minutes=7200) > trade.open_date_utc)
                 # temporary
-                and (trade.open_date_utc + timedelta(minutes=13000) > current_time)
+                and (trade.open_date_utc + timedelta(minutes=22000) > current_time)
         ):
-            return True, 'sell_stoploss_doom'
+            return True, 'sell_stoploss_u_e_2'
 
         return False, None
 
@@ -10001,8 +10004,6 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['cti_15m'] < -0.9)
                     item_buy_logic.append(dataframe['r_14_15m'] < -90.0)
                     item_buy_logic.append(dataframe['r_14'] < -94.0)
-                    item_buy_logic.append(dataframe['mfi'] > 24.0)
-                    item_buy_logic.append(dataframe['r_480_1h'] < -15.0)
                     item_buy_logic.append(dataframe['crsi_1h'] > 20.0)
 
                 # Condition #43 - 15m. Semi swing. Local dip. 1h uptrend.
@@ -10050,14 +10051,13 @@ class NostalgiaForInfinityX(IStrategy):
                     # Non-Standard protections (add below)
                     item_buy_logic.append(dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(12))
                     item_buy_logic.append(dataframe['ema_200_1h'].shift(12) > dataframe['ema_200_1h'].shift(24))
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.88))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26_15m'] > dataframe['ema_12_15m'])
-                    item_buy_logic.append((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.027))
+                    item_buy_logic.append((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.0265))
                     item_buy_logic.append((dataframe['ema_26_15m'].shift(3) - dataframe['ema_12_15m'].shift(3)) > (dataframe['open_15m'] / 100))
-                    item_buy_logic.append(dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.982))
-                    item_buy_logic.append(dataframe['r_14'] < -75.0)
+                    item_buy_logic.append(dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.999))
+                    item_buy_logic.append(dataframe['r_14'] < -72.0)
                     item_buy_logic.append(dataframe['crsi_1h'] > 14.0)
                     item_buy_logic.append(dataframe['volume'] < (dataframe['volume_mean_4'] * 5.0))
 
@@ -10159,7 +10159,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.02))
                     item_buy_logic.append((dataframe['ema_26_15m'].shift(3) - dataframe['ema_12_15m'].shift(3)) > (dataframe['open_15m'] / 100))
                     item_buy_logic.append(dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.99))
-                    item_buy_logic.append(dataframe['r_14'] < -75.0)
+                    item_buy_logic.append(dataframe['r_14'] < -60.0)
                     item_buy_logic.append(dataframe['cti_1h'] > -0.7)
 
                 # Condition #54 - 15m Semi swing. Uptrend. Local dip.
