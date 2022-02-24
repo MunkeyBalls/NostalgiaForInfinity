@@ -110,7 +110,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.273"
+        return "v11.0.280"
 
     # ROI table:
     minimal_roi = {
@@ -2333,7 +2333,7 @@ class NostalgiaForInfinityX(IStrategy):
 
         if (count_of_buys == 1):
             if (
-                    (current_profit > -0.08)
+                    (current_profit > -0.06)
                     or (
                         (last_candle['crsi'] < 12.0)
                     )
@@ -2341,7 +2341,7 @@ class NostalgiaForInfinityX(IStrategy):
                 return None
         elif (count_of_buys == 2):
             if (
-                    (current_profit > -0.14)
+                    (current_profit > -0.12)
                     or (
                         (last_candle['crsi'] < 20.0)
                         or (last_candle['crsi_1h'] < 11.0)
@@ -2480,9 +2480,20 @@ class NostalgiaForInfinityX(IStrategy):
                 and (last_candle['sma_200_dec_24'])
                 and (current_time - timedelta(minutes=9200) > trade.open_date_utc)
                 # temporary
-                and (trade.open_date_utc + timedelta(minutes=34000) > current_time)
+                and (trade.open_date_utc + timedelta(minutes=36000) > current_time)
         ):
             return True, 'sell_stoploss_u_e_2'
+
+        if (
+                (current_profit < -0.16)
+                and (last_candle['close'] < last_candle['ema_200'])
+                and (last_candle['close'] < (last_candle['ema_200'] - last_candle['atr']))
+                and (last_candle['sma_200_dec_20'])
+                and (last_candle['cmf'] < -0.0)
+                # temporary
+                and (trade.open_date_utc + timedelta(minutes=3600) > current_time)
+        ):
+            return True, 'sell_stoploss_doom'
 
         return False, None
 
@@ -10379,7 +10390,7 @@ class NostalgiaForInfinityX(IStrategy):
                     # Non-Standard protections (add below)
 
                     # Logic
-                    item_buy_logic.append(dataframe['ewo_15m'] > 7.0)
+                    item_buy_logic.append(dataframe['ewo_15m'] > 6.0)
                     item_buy_logic.append(dataframe['close_15m'] > (dataframe['close_15m'].shift(3)))
                     item_buy_logic.append(dataframe['close_15m'].shift(3) < (dataframe['bb20_2_low_15m'].shift(3) * 0.992))
                     item_buy_logic.append(dataframe['r_14_15m'].shift(3) < -95.0)
@@ -10406,7 +10417,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.92))
 
                     # Logic
-                    item_buy_logic.append(dataframe['ewo_15m'].shift(3) > 6.5)
+                    item_buy_logic.append(dataframe['ewo_15m'].shift(3) > 5.0)
                     item_buy_logic.append(dataframe['close_15m'].shift(3) < (dataframe['sma_30_15m'].shift(3) * 0.988))
                     item_buy_logic.append(dataframe['close_15m'].shift(3) < (dataframe['bb20_2_low_15m'].shift(3) * 0.996))
                     item_buy_logic.append(dataframe['rsi_14_15m'].shift(3) < 31.2)
