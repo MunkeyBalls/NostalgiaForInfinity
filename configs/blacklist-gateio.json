@@ -14,7 +14,7 @@
             // Other Coins
             "(1EARTH|ILA|BOBA|CWAR|MEM|AMPL|OMG|XYM|CARR|SGB|SKEY|KLV|PEOPLE)/.*",
             // Personal grudges
-            "(CWAR|AERGO)/.*"
+            "(CWAR|MBOX|AERGO)/.*"
         ]
     }
 }
