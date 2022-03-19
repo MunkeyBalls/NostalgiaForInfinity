@@ -113,7 +113,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.431"
+        return "v11.0.442"
 
     # ROI table:
     minimal_roi = {
@@ -9897,13 +9897,14 @@ class NostalgiaForInfinityX(IStrategy):
                 # Condition #11 - Semi swing. Local dip.
                 elif index == 11:
                     # Non-Standard protections
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.8))
+                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.91))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
                     item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.021))
                     item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
                     item_buy_logic.append(dataframe['close'] < dataframe['ema_20'] * 0.934)
+                    item_buy_logic.append(dataframe['r_480_1h'] < -16.0)
                     item_buy_logic.append(dataframe['volume'] < (dataframe['volume_mean_4'] * 5.0))
 
                 # Condition #12 - Semi swing. Local deeper dip. Uptrend.
@@ -9948,7 +9949,7 @@ class NostalgiaForInfinityX(IStrategy):
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 0.992))
-                    item_buy_logic.append(dataframe['ewo'] > 4.8)
+                    item_buy_logic.append(dataframe['ewo'] > 5.0)
                     item_buy_logic.append(dataframe['rsi_14'] < 31.0)
                     item_buy_logic.append(dataframe['cti'] < -0.8)
                     item_buy_logic.append(dataframe['r_480_1h'] < -18.0)
@@ -10035,11 +10036,11 @@ class NostalgiaForInfinityX(IStrategy):
                 elif index == 22:
                     # Non-Standard protections
                     item_buy_logic.append(dataframe['close_1h'] > dataframe['sup_level_1d'])
-                    item_buy_logic.append(dataframe['close_1h'] < dataframe['sup_level_1d'] * 1.05)
+                    item_buy_logic.append(dataframe['close_1h'] < dataframe['sup_level_1d'] * 1.046)
                     item_buy_logic.append(dataframe['low_1h'] < dataframe['sup_level_1d'] * 0.982)
                     item_buy_logic.append(dataframe['close_1h'] < dataframe['res_level_1h'])
                     item_buy_logic.append(dataframe['res_level_1d'] > dataframe['sup_level_1d'])
-                    item_buy_logic.append(dataframe['rsi_14'] < 39.8)
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
                     item_buy_logic.append(dataframe['rsi_14_1h'] > 48.0)
 
                     # Confirm uptrend - Heikin-Ashi
@@ -10428,7 +10429,7 @@ class NostalgiaForInfinityX(IStrategy):
                 # Condition #52 - 15m Semi swing. Local dip. BTC not downtrend.
                 elif index == 52:
                     # Non-Standard protections (add below)
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.85))
+                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.89))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26_15m'] > dataframe['ema_12_15m'])
@@ -10524,7 +10525,7 @@ class NostalgiaForInfinityX(IStrategy):
                 # Condition #59 - Semi swing. Local dip.
                 elif index == 59:
                     # Non-Standard protections
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.84))
+                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.9))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_100'] < (dataframe['ema_200'] * 1.054))
