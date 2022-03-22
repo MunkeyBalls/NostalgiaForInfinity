@@ -114,7 +114,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.448"
+        return "v11.0.449"
 
     # ROI table:
     minimal_roi = {
@@ -2372,12 +2372,12 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_1_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_1_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_1_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_1_2_2'
 
         # Sell signal 2
@@ -2385,12 +2385,12 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_2_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_2_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_2_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_2_2_2'
 
         # Sell signal 3
@@ -2398,12 +2398,12 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_3_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_3_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_3_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_3_2_2'
 
         # Sell signal 4
@@ -2411,19 +2411,19 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_4_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_4_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_4_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_4_2_2'
 
         # Sell signal 6
         elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 79.5):
             if (current_profit > 0.01):
                 return True, 'sell_signal_6_1'
-            elif (current_profit > -0.05) and (max_loss > 0.13):
+            elif (current_profit > -0.04) and (max_loss > 0.14):
                 return True, 'sell_signal_6_2'
 
         # Sell signal 7
@@ -2431,12 +2431,12 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_7_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_7_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_7_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_7_2_2'
 
         # Sell signal 8
@@ -2444,12 +2444,12 @@ class NostalgiaForInfinityX(IStrategy):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'sell_signal_8_1_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_8_1_2'
             else:
                 if (current_profit > 0.01):
                     return True, 'sell_signal_8_2_1'
-                elif (current_profit > -0.05) and (max_loss > 0.13):
+                elif (current_profit > -0.04) and (max_loss > 0.14):
                     return True, 'sell_signal_8_2_2'
 
         return False, None
@@ -9812,7 +9812,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['bb40_2_low'].shift().gt(0))
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.05))
                     item_buy_logic.append(dataframe['closedelta'].gt(dataframe['close'] * 0.0245))
-                    item_buy_logic.append(dataframe['tail'].lt(dataframe['bb40_2_delta'] * 0.24))
+                    item_buy_logic.append(dataframe['tail'].lt(dataframe['bb40_2_delta'] * 0.4))
                     item_buy_logic.append(dataframe['close'].lt(dataframe['bb40_2_low'].shift()))
                     item_buy_logic.append(dataframe['close'].le(dataframe['close'].shift()))
                     item_buy_logic.append(dataframe['cti_1h'] < 0.83)
