@@ -114,7 +114,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.464"
+        return "v11.0.470"
 
     # ROI table:
     minimal_roi = {
@@ -9873,7 +9873,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['close'] < dataframe['sma_15'] * 0.936)
                     item_buy_logic.append(dataframe['crsi'] < 30.0)
                     item_buy_logic.append(dataframe['rsi_14'] < dataframe['rsi_14'].shift(1))
-                    item_buy_logic.append(dataframe['rsi_14'] < 30.0)
+                    item_buy_logic.append(dataframe['rsi_14'] < 30.2)
                     item_buy_logic.append(dataframe['cci'] < -200.0)
                     item_buy_logic.append(dataframe['r_480_1h'] < -25.0)
 
@@ -9895,10 +9895,11 @@ class NostalgiaForInfinityX(IStrategy):
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < dataframe['sma_30'] * 0.938)
-                    item_buy_logic.append(dataframe['ewo'] > 3.2)
+                    item_buy_logic.append(dataframe['ewo'] > 3.0)
                     item_buy_logic.append(dataframe['rsi_14'] < 33.0)
                     item_buy_logic.append(dataframe['cti'] < -0.9)
                     item_buy_logic.append(dataframe['r_14'] < -97.0)
+                    item_buy_logic.append(dataframe['r_480_1h'] < -5.0)
 
                 # Condition #9 - Semi swing. Local dip. Downtrend.
                 elif index == 9:
@@ -9910,7 +9911,6 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['close'] < dataframe['sma_30'] * 0.97)
                     item_buy_logic.append(dataframe['cti'] < -0.95)
                     item_buy_logic.append(dataframe['ewo'] < -4.8)
-                    item_buy_logic.append(dataframe['cti_1h'] < -0.75)
                     item_buy_logic.append(dataframe['crsi_1h'] > 8.0)
                     item_buy_logic.append(dataframe['volume_mean_12'] > (dataframe['volume_mean_24'] * 0.75))
 
