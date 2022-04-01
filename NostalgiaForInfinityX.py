@@ -101,7 +101,7 @@ else:
 ##               REFERRAL LINKS                                                                          ##
 ##                                                                                                       ##
 ##  Binance: https://accounts.binance.com/en/register?ref=EAZC47FM (5% discount on trading fees)         ##
-##  Kucoin: https://www.kucoin.com/r/QBSSSPYV (5% discount on trading fees)                              ##
+##  Kucoin: https://www.kucoin.com/r/af/QBSSSPYV (5% discount on trading fees)                           ##
 ##  Gate.io: https://www.gate.io/signup/8054544 (10% discount on trading fees)                           ##
 ##  FTX: https://ftx.com/eu/profile#a=100178030 (5% discount on trading fees)                            ##
 ##  OKX: https://www.okx.com/join/11749725760 (5% discount on trading fees)                              ##
@@ -114,7 +114,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.491"
+        return "v11.0.493"
 
     # ROI table:
     minimal_roi = {
@@ -938,9 +938,9 @@ class NostalgiaForInfinityX(IStrategy):
             "safe_dips_threshold_144"   : 0.44,
             "safe_pump_6h_threshold"    : 0.4,
             "safe_pump_12h_threshold"   : None,
-            "safe_pump_24h_threshold"   : 0.6,
+            "safe_pump_24h_threshold"   : 0.5,
             "safe_pump_36h_threshold"   : None,
-            "safe_pump_48h_threshold"   : 1.8,
+            "safe_pump_48h_threshold"   : 1.6,
             "btc_1h_not_downtrend"      : False,
             "close_over_pivot_type"     : "none", # pivot, sup1, sup2, sup3, res1, res2, res3
             "close_over_pivot_offset"   : 1.0,
@@ -2318,10 +2318,15 @@ class NostalgiaForInfinityX(IStrategy):
         ):
             return None
 
-        filled_buys = trade.select_filled_orders('buy')
-        count_of_buys = len(filled_buys)
+        count_of_entries = 0
+        if (hasattr(trade, 'enter_side')):
+            filled_entries = trade.select_filled_orders(trade.enter_side)
+            count_of_entries = trade.nr_of_successful_entries
+        else:
+            filled_entries = trade.select_filled_orders('buy')
+            count_of_entries = len(filled_entries)
 
-        if (count_of_buys == 1):
+        if (count_of_entries == 1):
             if (
                     (current_profit > self.rebuy_pcts[0])
                     or (
@@ -2329,7 +2334,7 @@ class NostalgiaForInfinityX(IStrategy):
                     )
             ):
                 return None
-        elif (count_of_buys == 2):
+        elif (count_of_entries == 2):
             if (
                     (current_profit > self.rebuy_pcts[1])
                     or (
@@ -2338,7 +2343,7 @@ class NostalgiaForInfinityX(IStrategy):
                     )
             ):
                 return None
-        elif (count_of_buys == 3):
+        elif (count_of_entries == 3):
             if (
                     (current_profit > self.rebuy_pcts[2])
                     or (
@@ -2350,16 +2355,16 @@ class NostalgiaForInfinityX(IStrategy):
                 return None
 
         # Log if the last candle triggered a buy signal, even if max rebuys reached
-        if last_candle['buy'] == 1 and self.dp.runmode.value in ('backtest','dry_run'):
+        if (('buy' in last_candle and last_candle['buy'] == 1) or ('enter_long' in last_candle and last_candle['enter_long'] == 1)) and self.dp.runmode.value in ('backtest','dry_run'):
             log.info(f"Rebuy: a buy tag found for pair {trade.pair}")
 
         # Maximum 2 rebuys. Half the stake of the original.
-        if 0 < count_of_buys <= self.max_rebuy_orders:
+        if 0 < count_of_entries <= self.max_rebuy_orders:
             try:
                 # This returns first order stake size
-                stake_amount = filled_buys[0].cost
+                stake_amount = filled_entries[0].cost
                 # This then calculates current safety order size
-                stake_amount = stake_amount * (0.35 + (count_of_buys * 0.005))
+                stake_amount = stake_amount * (0.35 + (count_of_entries * 0.005))
                 return stake_amount
             except Exception as exception:
                 return None
@@ -9124,13 +9129,18 @@ class NostalgiaForInfinityX(IStrategy):
         max_loss = ((trade.open_rate - trade.min_rate) / trade.min_rate)
 
         if hasattr(trade, 'select_filled_orders'):
-            filled_buys = trade.select_filled_orders('buy')
-            count_of_buys = len(filled_buys)
-            if count_of_buys > 1:
-                initial_buy = filled_buys[0]
-                if (initial_buy is not None and initial_buy.average is not None):
-                    max_profit = ((trade.max_rate - initial_buy.average) / initial_buy.average)
-                    max_loss = ((initial_buy.average - trade.min_rate) / trade.min_rate)
+            count_of_entries = 1
+            if (hasattr(trade, 'enter_side')):
+                filled_entries = trade.select_filled_orders(trade.enter_side)
+                count_of_entries = trade.nr_of_successful_entries
+            else:
+                filled_entries = trade.select_filled_orders('buy')
+                count_of_entries = len(filled_entries)
+            if count_of_entries > 1:
+                initial_entry = filled_entries[0]
+                if (initial_entry is not None and initial_entry.average is not None):
+                    max_profit = ((trade.max_rate - initial_entry.average) / initial_entry.average)
+                    max_loss = ((initial_entry.average - trade.min_rate) / trade.min_rate)
 
         # Long mode
         if all(c in ['31', '32', '33', '34', '35', '36'] for c in buy_tags):
@@ -10113,7 +10123,7 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['ewo'] > 3.5)
                     item_buy_logic.append(dataframe['r_14'] < -97.0)
                     item_buy_logic.append(dataframe['r_96'] < -90.0)
-                    item_buy_logic.append(dataframe['ewo_1h'] > 2.8)
+                    item_buy_logic.append(dataframe['ewo_1h'] > 2.7)
                     item_buy_logic.append(dataframe['cti_1h'] < 0.9)
                     item_buy_logic.append(dataframe['r_480_1h'] < -25.0)
                     item_buy_logic.append(dataframe['volume_mean_12'] > (dataframe['volume_mean_24'] * 0.86))
