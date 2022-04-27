@@ -2289,18 +2289,12 @@ class NostalgiaForInfinityX(IStrategy):
                             proposed_stake: float, min_stake: float, max_stake: float,
                             **kwargs) -> float:
         if (self.position_adjustment_enable == True):
-            if ('rebuy_mode' in self.config):
-                self.rebuy_mode = self.config['rebuy_mode']
-            if ('use_alt_rebuys' in self.config and self.config['use_alt_rebuys']):
-                self.rebuy_mode = 1
-            if (self.rebuy_mode == 0):
-                return proposed_stake * self.max_rebuy_multiplier_0
-            elif (self.rebuy_mode == 1):
-                return proposed_stake * self.max_rebuy_multiplier_1
-            elif (self.rebuy_mode == 2):
-                return proposed_stake * self.max_rebuy_multiplier_2
-
-        return proposed_stake
+            # Move to 0.06 once existing bags clear
+            current_multiplier = self.max_rebuy_multiplier_0 - len(Trade.get_trades_proxy(is_open=True)) * 0.1
+            log.info(f"Stake multiplier: {current_multiplier}")
+            return proposed_stake * current_multiplier
+        else:
+            return proposed_stake
 
     def adjust_trade_position(self, trade: Trade, current_time: datetime,
                               current_rate: float, current_profit: float, min_stake: float,
