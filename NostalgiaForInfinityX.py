@@ -115,7 +115,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.976"
+        return "v11.0.992"
 
     # ROI table:
     minimal_roi = {
@@ -170,22 +170,26 @@ class NostalgiaForInfinityX(IStrategy):
     position_adjustment_enable = True
     rebuy_mode = 0
     max_rebuy_orders_0 = 4
-    max_rebuy_orders_1 = 2
+    max_rebuy_orders_1 = 1
     max_rebuy_orders_2 = 10
     max_rebuy_orders_3 = 8
+    max_rebuy_orders_4 = 3
     max_rebuy_multiplier_0 = 1.0
     max_rebuy_multiplier_1 = 1.0
     max_rebuy_multiplier_2 = 0.2
     max_rebuy_multiplier_3 = 0.05
+    max_rebuy_multiplier_4 = 0.1
     rebuy_pcts_n_0 = (-0.04, -0.06, -0.09, -0.12)
     rebuy_pcts_n_1 = (-0.07, -0.09)
     rebuy_pcts_n_2 = (-0.02, -0.025, -0.025, -0.03, -0.04, -0.045, -0.05, -0.055, -0.06, -0.08)
     rebuy_pcts_p_2 = (0.02, 0.025, 0.025, 0.03, 0.07, 0.075, 0.08, 0.085, 0.09, 0.095)
     rebuy_pcts_n_3 = (-0.02, -0.04, -0.06, -0.08, -0.1, -0.12, -0.14, -0.16)
+    rebuy_pcts_n_4 = (-0.02, -0.06, -0.1)
     rebuy_multi_0 = 0.15
     rebuy_multi_1 = 0.35
     rebuy_multi_2 = 1.0
     rebuy_multi_3 = 1.0
+    rebuy_multi_4 = 1.0
 
     # Profit maximizer
     profit_max_enabled = True
@@ -567,7 +571,7 @@ class NostalgiaForInfinityX(IStrategy):
         11: {
             "ema_fast"                  : False,
             "ema_fast_len"              : "26",
-            "ema_slow"                  : True,
+            "ema_slow"                  : False,
             "ema_slow_len"              : "50",
             "close_above_ema_fast"      : False,
             "close_above_ema_fast_len"  : "200",
@@ -607,8 +611,8 @@ class NostalgiaForInfinityX(IStrategy):
             "sma200_1h_rising_val"      : "50",
             "safe_dips_threshold_0"     : 0.032,
             "safe_dips_threshold_2"     : 0.09,
-            "safe_dips_threshold_12"    : 0.13,
-            "safe_dips_threshold_144"   : 0.23,
+            "safe_dips_threshold_12"    : 0.24,
+            "safe_dips_threshold_144"   : 0.44,
             "safe_pump_6h_threshold"    : 0.5,
             "safe_pump_12h_threshold"   : 0.5,
             "safe_pump_24h_threshold"   : 0.75,
@@ -2292,21 +2296,24 @@ class NostalgiaForInfinityX(IStrategy):
             proposed_stake = proposed_stake * current_multiplier
             log.info(f"Stake multiplier: {current_multiplier} Proposed stake: {proposed_stake}")
 
+            use_mode = self.rebuy_mode
             if ('rebuy_mode' in self.config):
-                self.rebuy_mode = self.config['rebuy_mode']
+                use_mode = self.config['rebuy_mode']
             if ('use_alt_rebuys' in self.config and self.config['use_alt_rebuys']):
-                self.rebuy_mode = 1
+                use_mode = 1
             is_leverage = bool(re.match(leverage_pattern,pair))
             if (is_leverage) and not ('do_not_use_leverage_rebuys' in self.config and self.config['do_not_use_leverage_rebuys']):
-                self.rebuy_mode = 3
-            if (self.rebuy_mode == 0):
+                use_mode = 4
+            if (use_mode == 0):
                 return proposed_stake * self.max_rebuy_multiplier_0
-            elif (self.rebuy_mode == 1):
+            elif (use_mode == 1):
                 return proposed_stake * self.max_rebuy_multiplier_1
-            elif (self.rebuy_mode == 2):
+            elif (use_mode == 2):
                 return proposed_stake * self.max_rebuy_multiplier_2
-            elif (self.rebuy_mode == 3):
+            elif (use_mode == 3):
                 return proposed_stake * self.max_rebuy_multiplier_3
+            elif (use_mode == 4):
+                return proposed_stake * self.max_rebuy_multiplier_4
 
         return proposed_stake
 
@@ -2361,21 +2368,31 @@ class NostalgiaForInfinityX(IStrategy):
         if (count_of_entries == 0):
             return None
 
+        use_mode = self.rebuy_mode
+        is_leverage = bool(re.match(leverage_pattern, trade.pair))
+        if (is_leverage) and not ('do_not_use_leverage_rebuys' in self.config and self.config['do_not_use_leverage_rebuys']):
+            use_mode = 4
+
         # if to use alternate rebuy scheme
         use_alt = False
-        if (self.rebuy_mode == 0) and ((filled_entries[0].cost * (self.rebuy_multi_0 + (count_of_entries * 0.005))) < min_stake):
+        if (use_mode == 0) and ((filled_entries[0].cost * (self.rebuy_multi_0 + (count_of_entries * 0.005))) < min_stake):
             use_alt = True
-        if (self.rebuy_mode == 2) and ((filled_entries[0].cost * (self.rebuy_multi_2 + (count_of_entries * 0.005))) < min_stake):
+        if (use_mode == 2) and ((filled_entries[0].cost * (self.rebuy_multi_2 + (count_of_entries * 0.005))) < min_stake):
             use_alt = True
-        if (self.rebuy_mode == 3) and ((filled_entries[0].cost * (self.rebuy_multi_3 + (count_of_entries * 0.005))) < min_stake):
+        if (use_mode == 3) and ((filled_entries[0].cost * (self.rebuy_multi_3 + (count_of_entries * 0.005))) < min_stake):
+            use_alt = True
+        if (use_mode == 4) and ((filled_entries[0].cost * (self.rebuy_multi_4 + (count_of_entries * 0.005))) < min_stake):
             use_alt = True
 
         if ('use_alt_rebuys' in self.config and self.config['use_alt_rebuys']):
             use_alt = True
 
+        if use_alt:
+            use_mode = 1
+
         is_rebuy = False
 
-        if (self.rebuy_mode == 0) and (not use_alt):
+        if (use_mode == 0):
             if (1 <= count_of_entries <= 2):
                 if (
                         (current_profit < self.rebuy_pcts_n_0[count_of_entries - 1])
@@ -2395,7 +2412,7 @@ class NostalgiaForInfinityX(IStrategy):
                         )
                 ):
                     is_rebuy = True
-        elif (self.rebuy_mode == 1) or (use_alt):
+        elif (use_mode == 1):
             if (count_of_entries == 1):
                 if (
                         (current_profit < self.rebuy_pcts_n_1[0])
@@ -2413,7 +2430,7 @@ class NostalgiaForInfinityX(IStrategy):
                         )
                 ):
                     is_rebuy = True
-        elif (self.rebuy_mode == 2):
+        elif (use_mode == 2):
             if (1 <= count_of_entries <= 4):
                 if (
                         (current_profit < self.rebuy_pcts_n_2[count_of_entries - 1])
@@ -2432,7 +2449,7 @@ class NostalgiaForInfinityX(IStrategy):
                         )
                 ):
                     is_rebuy = True
-        elif (self.rebuy_mode == 3):
+        elif (use_mode == 3):
             if (1 <= count_of_entries <= 4):
                 if (
                         (current_profit < self.rebuy_pcts_n_3[count_of_entries - 1])
@@ -2450,6 +2467,26 @@ class NostalgiaForInfinityX(IStrategy):
                         )
                 ):
                     is_rebuy = True
+        elif (use_mode == 4):
+            if (1 <= count_of_entries <= 1):
+                if (
+                        (current_profit < self.rebuy_pcts_n_4[count_of_entries - 1])
+                        and (
+                            (last_candle['crsi'] > 12.0)
+                            and (last_candle['crsi_1h'] > 10.0)
+                        )
+                ):
+                    is_rebuy = True
+            elif (2 <= count_of_entries <= self.max_rebuy_orders_4):
+                if (
+                        (current_profit < self.rebuy_pcts_n_4[count_of_entries - 1])
+                        and (
+                            (last_candle['crsi'] > 10.0)
+                            and (last_candle['crsi_1h'] > 12.0)
+                            and (last_candle['crsi_1h'] > 10.0)and (last_candle['btc_not_downtrend_1h'] == True)
+                        )
+                ):
+                    is_rebuy = True
 
         if not is_rebuy:
             return None
@@ -2459,20 +2496,20 @@ class NostalgiaForInfinityX(IStrategy):
             log.info(f"Rebuy: a buy tag found for pair {trade.pair}")
 
         # Calculate the new stake.
-        if 0 < count_of_entries <= (self.max_rebuy_orders_1 if use_alt else self.max_rebuy_orders_0 if self.rebuy_mode == 0 else self.max_rebuy_orders_1 if self.rebuy_mode == 1 else self.max_rebuy_orders_2):
+        if 0 < count_of_entries <= (self.max_rebuy_orders_0 if use_mode == 0 else self.max_rebuy_orders_1 if use_mode == 1 else self.max_rebuy_orders_2 if use_mode == 2 else self.max_rebuy_orders_3 if use_mode == 3 else self.max_rebuy_orders_4):
             try:
                 # This returns first order stake size
                 stake_amount = filled_entries[0].cost
                 # This then calculates current safety order size
-                if (self.rebuy_mode == 0) and (not use_alt):
+                if (use_mode == 0):
                     stake_amount = stake_amount * (self.rebuy_multi_0 + (count_of_entries * 0.005))
-                elif (self.rebuy_mode == 1) or (use_alt):
+                elif (use_mode == 1) or (use_alt):
                     stake_amount = stake_amount * (self.rebuy_multi_1 + (count_of_entries * 0.005))
                     if (stake_amount < min_stake):
                         stake_amount = min_stake
-                elif (self.rebuy_mode == 2):
+                elif (use_mode == 2):
                     stake_amount = stake_amount * (self.rebuy_multi_2 + (count_of_entries * 0.005))
-                elif (self.rebuy_mode == 3):
+                elif (use_mode == 3):
                     if (count_of_entries == 1):
                         stake_amount = stake_amount * self.rebuy_multi_3 * 1
                     elif (count_of_entries == 2):
@@ -2489,6 +2526,8 @@ class NostalgiaForInfinityX(IStrategy):
                         stake_amount = stake_amount * self.rebuy_multi_3 * 4
                     elif (count_of_entries == 8):
                         stake_amount = stake_amount * self.rebuy_multi_3 * 4
+                elif (use_mode == 4):
+                      stake_amount = stake_amount + (stake_amount * (self.rebuy_multi_4 * (count_of_entries - 1)))
                 return stake_amount
             except Exception as exception:
                 return None
@@ -2631,9 +2670,10 @@ class NostalgiaForInfinityX(IStrategy):
                 and (last_candle['close'] < last_candle['ema_200'])
                 and (((last_candle['ema_200'] - last_candle['close']) / last_candle['close']) < 0.004)
                 and (last_candle['rsi_14'] > previous_candle_1['rsi_14'])
-                and (last_candle['rsi_14'] > last_candle['rsi_14_1h'] + 16.0)
+                and (last_candle['rsi_14'] > last_candle['rsi_14_1h'] + 20.0)
                 and (last_candle['cmf'] < -0.0)
                 and (last_candle['sma_200_dec_24'])
+                and (last_candle['btc_not_downtrend_1h'] == False)
                 and (current_time - timedelta(minutes=30) > trade.open_date_utc)
                 # temporary
                 and (trade.open_date_utc.replace(tzinfo=None) >= datetime(2022, 5, 3) or is_backtest)
@@ -9370,7 +9410,7 @@ class NostalgiaForInfinityX(IStrategy):
         informative_pairs.extend([(pair, self.info_timeframe_1d) for pair in pairs])
         informative_pairs.extend([(pair, self.info_timeframe_15m) for pair in pairs])
 
-        if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP']:
+        if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP', 'TRY', 'BRL']:
             btc_info_pair = f"BTC/{self.config['stake_currency']}"
         else:
             btc_info_pair = "BTC/USDT"
@@ -9807,7 +9847,7 @@ class NostalgiaForInfinityX(IStrategy):
         --> BTC informative (5m/1h)
         ___________________________________________________________________________________________
         '''
-        if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP', 'TRY']:
+        if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP', 'TRY','BRL']:
             btc_info_pair = f"BTC/{self.config['stake_currency']}"
         else:
             btc_info_pair = "BTC/USDT"
@@ -10889,8 +10929,14 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(
                         (dataframe['ewo'] > 8.0)
                         | (dataframe['mfi'] > 20.0)
-                        |(dataframe['crsi_1h'] > 25.0)
+                        | (dataframe['crsi_1h'] > 25.0)
                         | (dataframe['tpct_change_144'] < 0.2)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['ewo'] > 6.0)
+                        | (dataframe['tpct_change_144'] < 0.12)
+                        | (dataframe['close'] > dataframe['ema_200_1h'])
+                        | (dataframe['ema_50_1h'] > dataframe['ema_200_1h'])
                     )
 
                 # Condition #12 - Semi swing. Local deeper dip. Uptrend.
@@ -10905,10 +10951,6 @@ class NostalgiaForInfinityX(IStrategy):
                     item_buy_logic.append(dataframe['cti'] < -0.9)
                     item_buy_logic.append(dataframe['r_480_1h'] < -22.0)
                     item_buy_logic.append(
-                        (dataframe['crsi_1h'] > 10.0)
-                        | (dataframe['volume_mean_12'] > (dataframe['volume_mean_24'] * 0.7))
-                    )
-                    item_buy_logic.append(
                         (dataframe['btc_not_downtrend_1h'] == True)
                         | (dataframe['ewo'] > 2.0)
                         | (dataframe['rsi_14'] < 20.0)
@@ -10917,6 +10959,36 @@ class NostalgiaForInfinityX(IStrategy):
                         | (dataframe['cti_1h'] < 0.5)
                         | (dataframe['crsi_1h'] > 16.0)
                         | (dataframe['close'] < dataframe['ema_20'] * 0.93)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.1)
+                        | (dataframe['mfi'] > 20.0)
+                        | (dataframe['ewo'] > 6.0)
+                        | (dataframe['cti_1h'] < 0.0)
+                        | (dataframe['rsi_14_1h'] < 40.0)
+                        | (dataframe['tpct_change_144'] < 0.1)
+                        | (dataframe['close'] < (dataframe['bb20_2_low'] * 0.97))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.9)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.2)
+                        | (dataframe['ewo'] > 6.0)
+                        | (dataframe['cti_1h'] < 0.5)
+                        | (dataframe['crsi_1h'] > 16.0)
+                        | (dataframe['rsi_14_1h'] < 40.0)
+                        | (dataframe['tpct_change_144'] < 0.2)
+                        | (dataframe['close'] > (dataframe['sup1_1d'] * 1.0))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.93)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.1)
+                        | (dataframe['ewo'] > 13.0)
+                        | (dataframe['cti_1h'] < 0.0)
+                        | (dataframe['rsi_14_1h'] < 40.0)
+                        | (dataframe['tpct_change_144'] < 0.16)
+                        | (dataframe['hl_pct_change_48_1h'] < 0.4)
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.91)
+                        | (dataframe['close'] < dataframe['bb20_2_low'] * 0.98)
                     )
 
                 # Condition #13 - Semi swing. Downtrend. Local dip.
@@ -11304,6 +11376,17 @@ class NostalgiaForInfinityX(IStrategy):
                         | (dataframe['rsi_14_1h'] < 50.0)
                         | (dataframe['crsi_1h'] > 25.0)
                         | (dataframe['close'] < dataframe['sma_30'] * 0.934)
+                        | (dataframe['close'] < (dataframe['res3_1d'] * 1.0))
+                        | (dataframe['ema_200'] > (dataframe['ema_200'].shift(12) * 1.01))
+                    )
+                    item_buy_logic.append(
+                        (dataframe['ewo'] > 5.4)
+                        | (dataframe['mfi'] > 30.0)
+                        | (dataframe['rsi_14'] < 36.0)
+                        | (dataframe['cti_1h'] < 0.8)
+                        | (dataframe['rsi_14_1h'] < 50.0)
+                        | (dataframe['hl_pct_change_48_1h'] < 0.4)
+                        | (dataframe['close'] < dataframe['sma_30'] * 0.97)
                         | (dataframe['close'] < (dataframe['res3_1d'] * 1.0))
                         | (dataframe['ema_200'] > (dataframe['ema_200'].shift(12) * 1.01))
                     )
@@ -12185,6 +12268,26 @@ class NostalgiaForInfinityX(IStrategy):
                         | ((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.028))
                         | (dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.99))
                     )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.1)
+                        | (dataframe['r_14'] < -80.0)
+                        | (dataframe['cti_1h'] < -0.5)
+                        | (dataframe['tpct_change_144'] < 0.12)
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.95)
+                        | ((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.028))
+                    )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.1)
+                        | (dataframe['rsi_14'] < 36.0)
+                        | (dataframe['cti_1h'] < -0.8)
+                        | (dataframe['tpct_change_144'] < 0.16)
+                        | (dataframe['sma_200'] > dataframe['sma_200'].shift(48))
+                        | (dataframe['close'] > (dataframe['sup_level_1h'] * 0.95))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.95)
+                        | (dataframe['close'] < (dataframe['res1_1d'] * 1.0))
+                        | ((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.024))
+                        | (dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.985))
+                    )
 
                 # Condition #53 - 15m. Semi swing. BTC not negative. Local dip.
                 elif index == 53:
@@ -12206,6 +12309,16 @@ class NostalgiaForInfinityX(IStrategy):
                         | (dataframe['close'] > (dataframe['sma_200'] * 0.95))
                         | (dataframe['close'] > (dataframe['sma_200_1h'] * 0.95))
                         | (dataframe['volume_mean_12'] > (dataframe['volume_mean_24'] * 1.1))
+                    )
+                    item_buy_logic.append(
+                        (dataframe['cmf'] > -0.2)
+                        | (dataframe['rsi_14'] < 20.0)
+                        | (dataframe['cti_1h'] < -0.8)
+                        | (dataframe['tpct_change_144'] < 0.2)
+                        | (dataframe['close'] > (dataframe['sup_level_1h'] * 0.95))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.95)
+                        | ((dataframe['ema_26_15m'] - dataframe['ema_12_15m']) > (dataframe['open_15m'] * 0.022))
+                        | (dataframe['close_15m'] < (dataframe['bb20_2_low_15m'] * 0.985))
                     )
 
                 # Condition #54 - 15m Semi swing. Uptrend. Local dip.
