@@ -115,7 +115,7 @@ class NostalgiaForInfinityX(IStrategy):
     INTERFACE_VERSION = 2
 
     def version(self) -> str:
-        return "v11.0.992"
+        return "v11.0.995"
 
     # ROI table:
     minimal_roi = {
@@ -2673,6 +2673,8 @@ class NostalgiaForInfinityX(IStrategy):
                 and (last_candle['rsi_14'] > last_candle['rsi_14_1h'] + 20.0)
                 and (last_candle['cmf'] < -0.0)
                 and (last_candle['sma_200_dec_24'])
+                and (last_candle['sma_200_dec_20'])
+                and (last_candle['sma_200_dec_20_1h'])
                 and (last_candle['btc_not_downtrend_1h'] == False)
                 and (current_time - timedelta(minutes=30) > trade.open_date_utc)
                 # temporary
@@ -2683,15 +2685,15 @@ class NostalgiaForInfinityX(IStrategy):
 
         # For times with strongly negative sentiment
         if (
-                (current_profit < [-0.25, -0.25, -0.25][stop_index])
+                (current_profit < [-0.16, -0.16, -0.2][stop_index])
                 and (last_candle['close'] < last_candle['ema_200'])
                 and (last_candle['close'] < (last_candle['ema_200'] - last_candle['atr']))
                 and (last_candle['sma_200_dec_20'])
                 and (last_candle['cmf'] < -0.0)
                 and (last_candle['btc_not_downtrend_1h'] == False)
-                and (last_candle['btc_tpct_change_144_5m'] > 0.05)
+                and (last_candle['btc_tpct_change_144_5m'] > 0.06)
                 and (last_candle['hl_pct_change_24_1h'] > 0.5)
-                and (last_candle['tpct_change_144'] > 0.2)
+                and (last_candle['tpct_change_144'] > 0.25)
                 # temporary
                 and (trade.open_date_utc.replace(tzinfo=None) > datetime(2022, 5, 12) or is_backtest)
         ):
@@ -10997,7 +10999,7 @@ class NostalgiaForInfinityX(IStrategy):
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < dataframe['ema_20'] * 0.999)
-                    item_buy_logic.append(dataframe['ewo'] < -5.4)
+                    item_buy_logic.append(dataframe['ewo'] < -4.8)
                     item_buy_logic.append(dataframe['cti'] < -0.97)
                     item_buy_logic.append(dataframe['crsi_1h'] > 6.0)
                     item_buy_logic.append(
@@ -11046,6 +11048,24 @@ class NostalgiaForInfinityX(IStrategy):
                         | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
                         | (dataframe['close'] > (dataframe['sma_200_1h'] * 0.85))
                         | (dataframe['close'] < dataframe['ema_20'] * 0.954)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['ewo'] < -6.0)
+                        | (dataframe['crsi_1h'] > 20.0)
+                        | (dataframe['tpct_change_144'] < 0.12)
+                        | (dataframe['sma_200'] > dataframe['sma_200'].shift(24))
+                        | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                        | (dataframe['close'] > (dataframe['sup2_1d'] * 1.0))
+                        | (dataframe['close'] > (dataframe['sma_200_1h'] * 0.85))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.944)
+                    )
+                    item_buy_logic.append(
+                        (dataframe['btc_not_downtrend_1h'] == True)
+                        | (dataframe['ewo'] < -12.0)
+                        | (dataframe['crsi_1h'] > 25.0)
+                        | (dataframe['sma_200'] > dataframe['sma_200'].shift(24))
+                        | (dataframe['close'] > (dataframe['sup2_1d'] * 1.0))
+                        | (dataframe['close'] < dataframe['ema_20'] * 0.934)
                     )
 
                 # Condition #14 - Semi swing. Strong uptrend. Local dip.
