@@ -15,7 +15,7 @@
             "(1EARTH|ILA|BOBA|CTXC|CWAR|HBAR|NMR|OMG|ONG|ARDR|PEOPLE|DMTR|ICP|MLS)/.*",
             
             // Personal grudges
-            "(CIX100|AERGO|HEGIC|TORN|MBOX|ICP)/.*"
+            "(CWAR|CIX100|AERGO|HEGIC|TORN|MBOX|ICP|LUNA|PEOPLE|OM)/.*"
         ]
     }
 }
