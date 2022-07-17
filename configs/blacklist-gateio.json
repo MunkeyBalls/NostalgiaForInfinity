@@ -15,7 +15,7 @@
             "(1EARTH|ILA|BOBA|CWAR|MEM|AMPL|OMG|XYM|CARR|SGB|SKEY|KLV|KOK|DMTR|CPOOL|KRL|MLS|SB|CEL)/.*",
             
             // Personal grudges
-            "(CWAR|CIX100|AERGO|HEGIC|TORN|MBOX|ICP|LUNA|PEOPLE|OM)/.*"
+            "(CWAR|CIX100|AERGO|HEGIC|TORN|MBOX|ICP|LUNA|PEOPLE|OM|LUNC)/.*"
         ]
     }
 }
