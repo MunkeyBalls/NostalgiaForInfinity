@@ -2579,7 +2579,7 @@ class NostalgiaForInfinityX(IStrategy):
 
             # Move to 0.06 once existing bags clear
             current_multiplier = 1.0
-            if entry_tag and entry_tag is not 'force_entry':
+            if entry_tag and entry_tag != 'force_entry':
                 current_multiplier -= len(Trade.get_trades_proxy(is_open=True)) * 0.1
                 proposed_stake = proposed_stake * current_multiplier
                 log.info(f"Stake multiplier: {current_multiplier} Proposed stake: {proposed_stake}")
