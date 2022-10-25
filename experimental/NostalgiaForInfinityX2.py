@@ -393,65 +393,65 @@ class NostalgiaForInfinityX2(IStrategy):
         return False, None
 
 
-    def sell_normal_bear_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_normal_bear_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Sell signal 1
         if (last_candle['rsi_14'] > 78.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_1_1_1'
+                    return True, 'exit_normal_bear_1_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_1_2_1'
+                    return True, 'exit_normal_bear_1_2_1'
 
         # Sell signal 2
         elif (last_candle['rsi_14'] > 79.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_2_1_1'
+                    return True, 'exit_normal_bear_2_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_2_2_1'
+                    return True, 'exit_normal_bear_2_2_1'
 
         # Sell signal 3
         elif (last_candle['rsi_14'] > 81.0):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_3_1_1'
+                    return True, 'exit_normal_bear_3_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_3_2_1'
+                    return True, 'exit_normal_bear_3_2_1'
 
         # Sell signal 4
         elif (last_candle['rsi_14'] > 77.0) and (last_candle['rsi_14_1h'] > 77.0):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_4_1_1'
+                    return True, 'exit_normal_bear_4_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_4_2_1'
+                    return True, 'exit_normal_bear_4_2_1'
 
         # Sell signal 6
         elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 78.5):
             if (current_profit > 0.01):
-                return True, 'sell_long_bear_6_1'
+                return True, 'exit_normal_bear_6_1'
 
         # Sell signal 7
         elif (last_candle['rsi_14_1h'] > 79.0) and (last_candle['crossed_below_ema_12_26']):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_7_1_1'
+                    return True, 'exit_normal_bear_7_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_7_2_1'
+                    return True, 'exit_normal_bear_7_2_1'
 
         # Sell signal 8
         elif (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.07):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_8_1_1'
+                    return True, 'exit_normal_bear_8_1_1'
             else:
                 if (current_profit > 0.01):
-                    return True, 'sell_long_bear_8_2_1'
+                    return True, 'exit_normal_bear_8_2_1'
 
         return False, None
 
@@ -647,7 +647,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     max_loss = ((initial_entry.average - trade.min_rate) / trade.min_rate)
 
         # Normal mode, bull
-        if all(c in self.normal_mode_bull_tags for c in enter_tags):
+        if any(c in self.normal_mode_bull_tags for c in enter_tags):
             sell, signal_name = self.exit_normal_bull(profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tag)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
@@ -829,6 +829,11 @@ class NostalgiaForInfinityX2(IStrategy):
         dataframe['r_14'] = williams_r(dataframe, period=14)
         dataframe['r_480'] = williams_r(dataframe, period=480)
 
+        # Close max
+        dataframe['close_max_48'] = dataframe['close'].rolling(48).max()
+
+        dataframe['pct_close_max_48'] = (dataframe['close_max_48'] - dataframe['close']) / dataframe['close']
+
         # For sell checks
         dataframe['crossed_below_ema_12_26'] = qtpylib.crossed_below(dataframe['ema_12'], dataframe['ema_26'])
 
@@ -954,7 +959,16 @@ class NostalgiaForInfinityX2(IStrategy):
         btc_info_5m = self.dp.get_pair_dataframe(btc_info_pair, btc_info_timeframe)
         # Indicators
         # -----------------------------------------------------------------------------------------
+
+        # RSI
         btc_info_5m['rsi_14'] = ta.RSI(btc_info_5m, timeperiod=14)
+
+        # Close max
+        btc_info_5m['close_max_24'] = btc_info_5m['close'].rolling(24).max()
+        btc_info_5m['close_max_72'] = btc_info_5m['close'].rolling(72).max()
+
+        btc_info_5m['pct_close_max_24'] = (btc_info_5m['close_max_24'] - btc_info_5m['close']) / btc_info_5m['close']
+        btc_info_5m['pct_close_max_72'] = (btc_info_5m['close_max_72'] - btc_info_5m['close']) / btc_info_5m['close']
 
         # Add prefix
         # -----------------------------------------------------------------------------------------
