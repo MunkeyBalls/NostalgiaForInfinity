@@ -1,7 +1,10 @@
+import copy
 import logging
+import rapidjson
 import freqtrade.vendor.qtpylib.indicators as qtpylib
 import numpy as np
 import talib.abstract as ta
+import pandas_ta as pta
 from freqtrade.strategy.interface import IStrategy
 from freqtrade.strategy import merge_informative_pair
 from pandas import DataFrame, Series
@@ -110,43 +113,160 @@ class NostalgiaForInfinityX2(IStrategy):
         # Enable/Disable conditions
         # -------------------------------------------------------
         "buy_condition_1_enable": True,
+
+        "buy_condition_11_enable": True,
     }
 
     buy_protection_params = {}
 
     #############################################################
+    # CACHES
+    target_profit_cache = None
+    #############################################################
+
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
+        if self.target_profit_cache is None:
+            bot_name = ""
+            if ('bot_name' in self.config):
+                bot_name = self.config["bot_name"] + "-"
+            self.target_profit_cache = Cache(
+                self.config["user_data_dir"] / ("nfix2-profit_max-" + bot_name  + self.config["exchange"]["name"] + "-" + self.config["stake_currency"] +  ("-(backtest)" if (self.config['runmode'].value == 'backtest') else "") + ".json")
+            )
+
+        # If the cached data hasn't changed, it's a no-op
+        self.target_profit_cache.save()
 
     def get_ticker_indicator(self):
         return int(self.timeframe[:-1])
 
-    def exit_normal_bull(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_normal_bull(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_normal_bull_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        sell, signal_name = self.exit_normal_bull_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
-        sell, signal_name = self.exit_normal_bull_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bull_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
-        sell, signal_name = self.exit_normal_bull_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bull_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
-        sell, signal_name = self.exit_normal_bull_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bull_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.normal_bull_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.normal_bull_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.normal_bull_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.03)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_normal_bull_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_normal_bull_max", "exit_normal_bull_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
 
         return False, None
 
+    def normal_bull_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def normal_bull_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_normal_bull_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.055)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.045)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_normal_bull_max"]):
+            if (0.001 <= current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
 
     def exit_normal_bull_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Sell signal 1
-        if (last_candle['rsi_14'] > 78.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
+        if (last_candle['rsi_14'] > 79.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'exit_normal_bull_1_1_1'
@@ -155,7 +275,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     return True, 'exit_normal_bull_1_2_1'
 
         # Sell signal 2
-        elif (last_candle['rsi_14'] > 79.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
+        elif (last_candle['rsi_14'] > 80.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'exit_normal_bull_2_1_1'
@@ -164,7 +284,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     return True, 'exit_normal_bull_2_2_1'
 
         # Sell signal 3
-        elif (last_candle['rsi_14'] > 81.0):
+        elif (last_candle['rsi_14'] > 84.0):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'exit_normal_bull_3_1_1'
@@ -182,7 +302,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     return True, 'exit_normal_bull_4_2_1'
 
         # Sell signal 6
-        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 78.5):
+        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 79.0):
             if (current_profit > 0.01):
                 return True, 'exit_normal_bull_6_1'
 
@@ -196,7 +316,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     return True, 'exit_normal_bull_7_2_1'
 
         # Sell signal 8
-        elif (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.07):
+        elif (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.08):
             if (last_candle['close'] > last_candle['ema_200']):
                 if (current_profit > 0.01):
                     return True, 'exit_normal_bull_8_1_1'
@@ -209,83 +329,83 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bull_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         if (last_candle['close'] > last_candle['sma_200_1h']):
             if 0.01 > current_profit >= 0.001:
-                if (last_candle['rsi_14'] < 26.0):
+                if (last_candle['rsi_14'] < 20.0):
                     return True, 'exit_normal_bull_o_0'
             elif 0.02 > current_profit >= 0.01:
-                if (last_candle['rsi_14'] < 30.0):
+                if (last_candle['rsi_14'] < 28.0):
                     return True, 'exit_normal_bull_o_1'
             elif 0.03 > current_profit >= 0.02:
-                if (last_candle['rsi_14'] < 32.0):
+                if (last_candle['rsi_14'] < 30.0):
                     return True, 'exit_normal_bull_o_2'
             elif 0.04 > current_profit >= 0.03:
-                if (last_candle['rsi_14'] < 34.0):
+                if (last_candle['rsi_14'] < 32.0):
                     return True, 'exit_normal_bull_o_3'
             elif 0.05 > current_profit >= 0.04:
-                if (last_candle['rsi_14'] < 36.0):
+                if (last_candle['rsi_14'] < 34.0):
                     return True, 'exit_normal_bull_o_4'
             elif 0.06 > current_profit >= 0.05:
-                if (last_candle['rsi_14'] < 38.0):
+                if (last_candle['rsi_14'] < 36.0):
                     return True, 'exit_normal_bull_o_5'
             elif 0.07 > current_profit >= 0.06:
-                if (last_candle['rsi_14'] < 40.0):
+                if (last_candle['rsi_14'] < 38.0):
                     return True, 'exit_normal_bull_o_6'
             elif 0.08 > current_profit >= 0.07:
-                if (last_candle['rsi_14'] < 42.0):
+                if (last_candle['rsi_14'] < 40.0):
                     return True, 'exit_normal_bull_o_7'
             elif 0.09 > current_profit >= 0.08:
-                if (last_candle['rsi_14'] < 44.0):
+                if (last_candle['rsi_14'] < 42.0):
                     return True, 'exit_normal_bull_o_8'
             elif 0.1 > current_profit >= 0.09:
-                if (last_candle['rsi_14'] < 46.0):
+                if (last_candle['rsi_14'] < 44.0):
                     return True, 'exit_normal_bull_o_9'
             elif 0.12 > current_profit >= 0.1:
-                if (last_candle['rsi_14'] < 48.0):
+                if (last_candle['rsi_14'] < 46.0):
                     return True, 'exit_normal_bull_o_10'
             elif 0.2 > current_profit >= 0.12:
-                if (last_candle['rsi_14'] < 46.0):
+                if (last_candle['rsi_14'] < 44.0):
                     return True, 'exit_normal_bull_o_11'
             elif current_profit >= 0.2:
-                if (last_candle['rsi_14'] < 44.0):
+                if (last_candle['rsi_14'] < 42.0):
                     return True, 'exit_normal_bull_o_12'
         elif (last_candle['close'] < last_candle['sma_200_1h']):
             if 0.01 > current_profit >= 0.001:
-                if (last_candle['rsi_14'] < 28.0):
+                if (last_candle['rsi_14'] < 22.0):
                     return True, 'exit_normal_bull_u_0'
             elif 0.02 > current_profit >= 0.01:
-                if (last_candle['rsi_14'] < 32.0):
+                if (last_candle['rsi_14'] < 30.0):
                     return True, 'exit_normal_bull_u_1'
             elif 0.03 > current_profit >= 0.02:
-                if (last_candle['rsi_14'] < 34.0):
+                if (last_candle['rsi_14'] < 32.0):
                     return True, 'exit_normal_bull_u_2'
             elif 0.04 > current_profit >= 0.03:
-                if (last_candle['rsi_14'] < 36.0):
+                if (last_candle['rsi_14'] < 34.0):
                     return True, 'exit_normal_bull_u_3'
             elif 0.05 > current_profit >= 0.04:
-                if (last_candle['rsi_14'] < 38.0):
+                if (last_candle['rsi_14'] < 36.0):
                     return True, 'exit_normal_bull_u_4'
             elif 0.06 > current_profit >= 0.05:
-                if (last_candle['rsi_14'] < 40.0):
+                if (last_candle['rsi_14'] < 38.0):
                     return True, 'exit_normal_bull_u_5'
             elif 0.07 > current_profit >= 0.06:
-                if (last_candle['rsi_14'] < 42.0):
+                if (last_candle['rsi_14'] < 40.0):
                     return True, 'exit_normal_bull_u_6'
             elif 0.08 > current_profit >= 0.07:
-                if (last_candle['rsi_14'] < 44.0):
+                if (last_candle['rsi_14'] < 42.0):
                     return True, 'exit_normal_bull_u_7'
             elif 0.09 > current_profit >= 0.08:
-                if (last_candle['rsi_14'] < 46.0):
+                if (last_candle['rsi_14'] < 44.0):
                     return True, 'exit_normal_bull_u_8'
             elif 0.1 > current_profit >= 0.09:
-                if (last_candle['rsi_14'] < 48.0):
+                if (last_candle['rsi_14'] < 46.0):
                     return True, 'exit_normal_bull_u_9'
             elif 0.12 > current_profit >= 0.1:
-                if (last_candle['rsi_14'] < 50.0):
+                if (last_candle['rsi_14'] < 48.0):
                     return True, 'exit_normal_bull_u_10'
             elif 0.2 > current_profit >= 0.12:
-                if (last_candle['rsi_14'] < 48.0):
+                if (last_candle['rsi_14'] < 46.0):
                     return True, 'exit_normal_bull_u_11'
             elif current_profit >= 0.2:
-                if (last_candle['rsi_14'] < 46.0):
+                if (last_candle['rsi_14'] < 44.0):
                     return True, 'exit_normal_bull_u_12'
 
         return False, None
@@ -362,35 +482,135 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bull_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Stoploss doom
         if (
-                (current_profit < -0.12)
+                (current_profit < -0.06)
         ):
             return True, 'exit_normal_bull_stoploss_doom'
 
         return False, None
 
-    def sell_normal_bear(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_normal_bear(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
+
         # Original sell signals
-        sell, signal_name = self.exit_normal_bear_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        sell, signal_name = self.exit_normal_bear_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
-        sell, signal_name = self.exit_normal_bear_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bear_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
-        sell, signal_name = self.exit_normal_bear_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bear_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
-        sell, signal_name = self.exit_normal_bear_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, buy_tag)
-        if sell and (signal_name is not None):
-            return True, signal_name
+        if not sell:
+            sell, signal_name = self.exit_normal_bear_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.normal_bear_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.normal_bear_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.normal_bear_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.03)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_normal_bear_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_normal_bear_max", "exit_normal_bear_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
 
         return False, None
 
+    def normal_bear_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def normal_bear_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_normal_bear_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.055)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.045)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_normal_bear_max"]):
+            if (current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
 
     def exit_normal_bear_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Sell signal 1
@@ -610,7 +830,7 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bear_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Stoploss doom
         if (
-                (current_profit < -0.12)
+                (current_profit < -0.05)
         ):
             return True, 'exit_normal_bear_stoploss_doom'
 
@@ -647,13 +867,13 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Normal mode, bull
         if any(c in self.normal_mode_bull_tags for c in enter_tags):
-            sell, signal_name = self.exit_normal_bull(profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tag)
+            sell, signal_name = self.exit_normal_bull(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Normal mode, bear
-        if all(c in self.normal_mode_bear_tags for c in enter_tags):
-            sell, signal_name = self.sell_normal_bear(profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tag)
+        if any(c in self.normal_mode_bear_tags for c in enter_tags):
+            sell, signal_name = self.exit_normal_bear(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
@@ -715,7 +935,16 @@ class NostalgiaForInfinityX2(IStrategy):
         # RSI
         informative_4h['rsi_14'] = ta.RSI(informative_4h, timeperiod=14, fillna=True)
 
+        # EMA
+        informative_4h['ema_12'] = ta.EMA(informative_4h, timeperiod=12)
+        informative_4h['ema_26'] = ta.EMA(informative_4h, timeperiod=26)
+        informative_4h['ema_50'] = ta.EMA(informative_4h, timeperiod=50)
+        informative_4h['ema_100'] = ta.EMA(informative_4h, timeperiod=100)
+        informative_4h['ema_200'] = ta.EMA(informative_4h, timeperiod=200)
+
         # SMA
+        informative_4h['sma_12'] = ta.SMA(informative_4h, timeperiod=12)
+        informative_4h['sma_26'] = ta.SMA(informative_4h, timeperiod=26)
         informative_4h['sma_50'] = ta.SMA(informative_4h, timeperiod=50)
         informative_4h['sma_200'] = ta.SMA(informative_4h, timeperiod=200)
 
@@ -729,6 +958,8 @@ class NostalgiaForInfinityX2(IStrategy):
         informative_4h['res_level'] = Series(np.where(res_series, np.where(informative_4h['close'] > informative_4h['open'], informative_4h['close'], informative_4h['open']), float('NaN'))).ffill()
         informative_4h['res_hlevel'] = Series(np.where(res_series, informative_4h['high'], float('NaN'))).ffill()
         informative_4h['sup_level'] = Series(np.where(sup_series, np.where(informative_4h['close'] < informative_4h['open'], informative_4h['close'], informative_4h['open']), float('NaN'))).ffill()
+
+        informative_4h['not_downtrend'] = ((informative_4h['close'] > informative_4h['close'].shift(2)) | (informative_4h['rsi_14'] > 50.0))
 
         # Performance logging
         # -----------------------------------------------------------------------------------------
@@ -748,7 +979,16 @@ class NostalgiaForInfinityX2(IStrategy):
         # RSI
         informative_1h['rsi_14'] = ta.RSI(informative_1h, timeperiod=14)
 
+        # EMA
+        informative_1h['ema_12'] = ta.EMA(informative_1h, timeperiod=12)
+        informative_1h['ema_26'] = ta.EMA(informative_1h, timeperiod=26)
+        informative_1h['ema_50'] = ta.EMA(informative_1h, timeperiod=50)
+        informative_1h['ema_100'] = ta.EMA(informative_1h, timeperiod=100)
+        informative_1h['ema_200'] = ta.EMA(informative_1h, timeperiod=200)
+
         # SMA
+        informative_1h['sma_12'] = ta.SMA(informative_1h, timeperiod=12)
+        informative_1h['sma_26'] = ta.SMA(informative_1h, timeperiod=26)
         informative_1h['sma_50'] = ta.SMA(informative_1h, timeperiod=50)
         informative_1h['sma_100'] = ta.SMA(informative_1h, timeperiod=100)
         informative_1h['sma_200'] = ta.SMA(informative_1h, timeperiod=200)
@@ -763,12 +1003,24 @@ class NostalgiaForInfinityX2(IStrategy):
         informative_1h['r_14'] = williams_r(informative_1h, period=14)
         informative_1h['r_480'] = williams_r(informative_1h, period=480)
 
+        # CTI
+        informative_1h['cti_20'] = pta.cti(informative_1h["close"], length=20)
+
         # S/R
         res_series = informative_1h['high'].rolling(window = 5, center=True).apply(lambda row: is_resistance(row), raw=True).shift(2)
         sup_series = informative_1h['low'].rolling(window = 5, center=True).apply(lambda row: is_support(row), raw=True).shift(2)
         informative_1h['res_level'] = Series(np.where(res_series, np.where(informative_1h['close'] > informative_1h['open'], informative_1h['close'], informative_1h['open']), float('NaN'))).ffill()
         informative_1h['res_hlevel'] = Series(np.where(res_series, informative_1h['high'], float('NaN'))).ffill()
         informative_1h['sup_level'] = Series(np.where(sup_series, np.where(informative_1h['close'] < informative_1h['open'], informative_1h['close'], informative_1h['open']), float('NaN'))).ffill()
+
+        # Pump protections
+        informative_1h['hl_pct_change_48'] = range_percent_change(self, informative_1h, 'HL', 48)
+        informative_1h['hl_pct_change_36'] = range_percent_change(self, informative_1h, 'HL', 36)
+        informative_1h['hl_pct_change_24'] = range_percent_change(self, informative_1h, 'HL', 24)
+        informative_1h['hl_pct_change_12'] = range_percent_change(self, informative_1h, 'HL', 12)
+        informative_1h['hl_pct_change_6'] = range_percent_change(self, informative_1h, 'HL', 6)
+
+        informative_1h['not_downtrend'] = ((informative_1h['close'] > informative_1h['close'].shift(2)) | (informative_1h['rsi_14'] > 50.0))
 
         # Performance logging
         # -----------------------------------------------------------------------------------------
@@ -827,6 +1079,16 @@ class NostalgiaForInfinityX2(IStrategy):
         # Williams %R
         dataframe['r_14'] = williams_r(dataframe, period=14)
         dataframe['r_480'] = williams_r(dataframe, period=480)
+
+        # Dip protection
+        dataframe['tpct_change_0']   = top_percent_change(self, dataframe, 0)
+        dataframe['tpct_change_2']   = top_percent_change(self, dataframe, 2)
+        dataframe['tpct_change_12']  = top_percent_change(self, dataframe, 12)
+        dataframe['tpct_change_144'] = top_percent_change(self, dataframe, 144)
+        # 3 hours, protect against wicks
+        dataframe['hl_pct_change_36'] = range_percent_change(self, dataframe, 'HL', 36)
+        # 12 hours
+        dataframe['hl_pct_change_144'] = range_percent_change(self, dataframe, 'HL', 144)
 
         # Close max
         dataframe['close_max_48'] = dataframe['close'].rolling(48).max()
@@ -899,6 +1161,9 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # SMA
         btc_info_4h['sma_200'] = ta.SMA(btc_info_4h, timeperiod=200)
+
+        # Bull market or not
+        btc_info_4h['is_bull'] = btc_info_4h['close'] > btc_info_4h['sma_200']
 
         # Add prefix
         # -----------------------------------------------------------------------------------------
@@ -1066,33 +1331,68 @@ class NostalgiaForInfinityX2(IStrategy):
                 # Condition #1 - Long mode bull. Uptrend.
                 if index == 1:
                     # Protections
-                    #item_buy_logic.append(dataframe['ema_200'] > (dataframe['ema_200'].shift(12) * 1.01))
-                    #item_buy_logic.append(dataframe['close'] > dataframe['sma_200'])
-                    #item_buy_logic.append(dataframe['close'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['close'] > dataframe['sma_200_4h'])
-                    item_buy_logic.append(dataframe['sma_50'] > dataframe['sma_200'])
-                    item_buy_logic.append(dataframe['sma_50_1h'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['sma_50_4h'] > dataframe['sma_200_4h'])
-                    #item_buy_logic.append(dataframe['ema_200'] > dataframe['sma_200'])
-                    #item_buy_logic.append(dataframe['btc_not_downtrend_1h'])
-                    #item_buy_logic.append(dataframe['btc_close_4h'] > dataframe['btc_sma_200_4h'])
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_4h'] * 0.9))
-                    item_buy_logic.append(dataframe['close'] > (dataframe['sup_level_1h'] * 0.9))
-                    item_buy_logic.append(dataframe['close'] > dataframe['sup3_1d'])
-                    item_buy_logic.append(dataframe['close'] < dataframe['res3_1d'])
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'])
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append((dataframe['tpct_change_2'] < 0.06))
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['hl_pct_change_36'] < 0.3)
+
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
+                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
+                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
+
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
+                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
+                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.85)
+
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
-                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.01))
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.016))
                     item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 1.0))
 
-                    #item_buy_logic.append(qtpylib.crossed_above(dataframe['close'], dataframe['sma_50']))
-                    #item_buy_logic.append(dataframe['rsi_14'] < 30.0)
-                    #item_buy_logic.append(dataframe['cti_20'] < -0.9)
-                    item_buy_logic.append(dataframe['rsi_14_4h'] < 50.0)
-                    #item_buy_logic.append(dataframe['cti_20_4h'] < 0.0)
-                    #item_buy_logic.append(dataframe['r_480_1h'] < -20.0)
-                    #item_buy_logic.append(dataframe['close'] > dataframe['open'])
+                # Condition #11 - Normal mode bear.
+                if index == 11:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append((dataframe['tpct_change_2'] < 0.06))
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['hl_pct_change_36'] < 0.3)
+
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
+                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
+                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
+                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
+
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
+                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
+                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
+                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.85)
+
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.016))
+                    item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 1.0))
 
                 item_buy_logic.append(dataframe['volume'] > 0)
                 item_buy = reduce(lambda x, y: x & y, item_buy_logic)
@@ -1114,6 +1414,10 @@ class NostalgiaForInfinityX2(IStrategy):
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float, rate: float,
                             time_in_force: str, current_time: datetime, entry_tag: Optional[str],
                             **kwargs) -> bool:
+        # allow force entries
+        if (entry_tag == 'force_entry'):
+            return True
+
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
 
         if(len(dataframe) < 1):
@@ -1134,6 +1438,26 @@ class NostalgiaForInfinityX2(IStrategy):
                 return False
 
         return True
+
+    def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
+                           rate: float, time_in_force: str, exit_reason: str,
+                           current_time: datetime, **kwargs) -> bool:
+        self._remove_profit_target(pair)
+        return True
+
+    def _set_profit_target(self, pair: str, sell_reason: str, rate: float, current_profit: float, current_time: datetime):
+        self.target_profit_cache.data[pair] = {
+            "rate": rate,
+            "profit": current_profit,
+            "sell_reason": sell_reason,
+            "time_profit_reached": current_time.isoformat()
+        }
+        self.target_profit_cache.save()
+
+    def _remove_profit_target(self, pair: str):
+        if self.target_profit_cache is not None:
+            self.target_profit_cache.data.pop(pair, None)
+            self.target_profit_cache.save()
 
 # +---------------------------------------------------------------------------+
 # |                              Custom Indicators                            |
@@ -1343,3 +1667,63 @@ def top_percent_change(self, dataframe: DataFrame, length: int) -> float:
         return (dataframe['open'] - dataframe['close']) / dataframe['close']
     else:
         return (dataframe['open'].rolling(length).max() - dataframe['close']) / dataframe['close']
+
+    # +---------------------------------------------------------------------------+
+# |                              Classes                                      |
+# +---------------------------------------------------------------------------+
+
+class Cache:
+
+    def __init__(self, path):
+        self.path = path
+        self.data = {}
+        self._mtime = None
+        self._previous_data = {}
+        try:
+            self.load()
+        except FileNotFoundError:
+            pass
+
+    @staticmethod
+    def rapidjson_load_kwargs():
+        return {"number_mode": rapidjson.NM_NATIVE}
+
+    @staticmethod
+    def rapidjson_dump_kwargs():
+        return {"number_mode": rapidjson.NM_NATIVE}
+
+    def load(self):
+        if not self._mtime or self.path.stat().st_mtime_ns != self._mtime:
+            self._load()
+
+    def save(self):
+        if self.data != self._previous_data:
+            self._save()
+
+    def process_loaded_data(self, data):
+        return data
+
+    def _load(self):
+        # This method only exists to simplify unit testing
+        with self.path.open("r") as rfh:
+            try:
+                data = rapidjson.load(
+                    rfh,
+                    **self.rapidjson_load_kwargs()
+                )
+            except rapidjson.JSONDecodeError as exc:
+                log.error("Failed to load JSON from %s: %s", self.path, exc)
+            else:
+                self.data = self.process_loaded_data(data)
+                self._previous_data = copy.deepcopy(self.data)
+                self._mtime = self.path.stat().st_mtime_ns
+
+    def _save(self):
+        # This method only exists to simplify unit testing
+        rapidjson.dump(
+            self.data,
+            self.path.open("w"),
+            **self.rapidjson_dump_kwargs()
+        )
+        self._mtime = self.path.stat().st_mtime
+        self._previous_data = copy.deepcopy(self.data)
