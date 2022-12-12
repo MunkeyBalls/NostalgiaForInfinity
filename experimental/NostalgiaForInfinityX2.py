@@ -63,7 +63,7 @@ class NostalgiaForInfinityX2(IStrategy):
     INTERFACE_VERSION = 3
 
     def version(self) -> str:
-        return "v0.0.1"
+        return "v12.0.2"
 
     # ROI table:
     minimal_roi = {
@@ -106,9 +106,17 @@ class NostalgiaForInfinityX2(IStrategy):
     startup_candle_count: int = 480
 
     # Normal mode bull tags
-    normal_mode_bull_tags = ['force_entry', '1', '2', '3', '4']
+    normal_mode_bull_tags = ['force_entry', '1', '2', '3', '4', '5', '6']
     # Normal mode bear tags
-    normal_mode_bear_tags = ['11', '12', '13', '14']
+    normal_mode_bear_tags = ['11', '12', '13', '14', '15', '16']
+    # Pump mode bull tags
+    pump_mode_bull_tags = ['21']
+    # Pump mode bear tags
+    pump_mode_bear_tags = ['31']
+    # Quick mode bull tags
+    quick_mode_bull_tags = ['41']
+    # Quick mode bear tags
+    quick_mode_bear_tags = ['51']
 
     #############################################################
     # Buy side configuration
@@ -120,11 +128,23 @@ class NostalgiaForInfinityX2(IStrategy):
         "buy_condition_2_enable": True,
         "buy_condition_3_enable": True,
         "buy_condition_4_enable": True,
+        "buy_condition_5_enable": True,
+        "buy_condition_6_enable": True,
 
         "buy_condition_11_enable": True,
         "buy_condition_12_enable": True,
         "buy_condition_13_enable": True,
         "buy_condition_14_enable": True,
+        "buy_condition_15_enable": True,
+        "buy_condition_16_enable": True,
+
+        "buy_condition_21_enable": True,
+
+        "buy_condition_31_enable": True,
+
+        "buy_condition_41_enable": True,
+
+        "buy_condition_51_enable": True,
     }
 
     buy_protection_params = {}
@@ -495,7 +515,7 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bull_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Stoploss doom
         if (
-                (current_profit < -0.14)
+                (current_profit < -0.1)
         ):
             return True, 'exit_normal_bull_stoploss_doom'
 
@@ -690,7 +710,7 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bear_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         if (last_candle['close'] > last_candle['sma_200_1h']):
             if 0.01 > current_profit >= 0.001:
-                if (last_candle['rsi_14'] < 26.0):
+                if (last_candle['rsi_14'] < 22.0):
                     return True, 'exit_normal_bear_o_0'
             elif 0.02 > current_profit >= 0.01:
                 if (last_candle['rsi_14'] < 30.0):
@@ -730,7 +750,7 @@ class NostalgiaForInfinityX2(IStrategy):
                     return True, 'exit_normal_bear_o_12'
         elif (last_candle['close'] < last_candle['sma_200_1h']):
             if 0.01 > current_profit >= 0.001:
-                if (last_candle['rsi_14'] < 28.0):
+                if (last_candle['rsi_14'] < 24.0):
                     return True, 'exit_normal_bear_u_0'
             elif 0.02 > current_profit >= 0.01:
                 if (last_candle['rsi_14'] < 32.0):
@@ -843,9 +863,1401 @@ class NostalgiaForInfinityX2(IStrategy):
     def exit_normal_bear_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         # Stoploss doom
         if (
-                (current_profit < -0.14)
+                (current_profit < -0.1)
         ):
             return True, 'exit_normal_bear_stoploss_doom'
+
+        return False, None
+
+    def exit_pump_bull(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
+
+        # Original sell signals
+        sell, signal_name = self.exit_pump_bull_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Main sell signals
+        if not sell:
+            sell, signal_name = self.exit_pump_bull_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Williams %R based sells
+        if not sell:
+            sell, signal_name = self.exit_pump_bull_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Stoplosses
+        if not sell:
+            sell, signal_name = self.exit_pump_bull_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.pump_bull_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.pump_bull_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.pump_bull_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.03)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_pump_bull_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_pump_bull_max", "exit_pump_bull_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
+
+        return False, None
+
+    def pump_bull_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def pump_bull_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_pump_bull_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_pump_bull_max"]):
+            if (current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
+
+    def exit_pump_bull_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Sell signal 1
+        if (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_1_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_1_2_1'
+
+        # Sell signal 2
+        elif (last_candle['rsi_14'] > 80.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_2_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_2_2_1'
+
+        # Sell signal 3
+        elif (last_candle['rsi_14'] > 85.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_3_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_3_2_1'
+
+        # Sell signal 4
+        elif (last_candle['rsi_14'] > 80.0) and (last_candle['rsi_14_1h'] > 80.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_4_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_4_2_1'
+
+        # Sell signal 6
+        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 79.0):
+            if (current_profit > 0.01):
+                return True, 'exit_pump_bull_6_1'
+
+        # Sell signal 7
+        elif (last_candle['rsi_14_1h'] > 79.0) and (last_candle['crossed_below_ema_12_26']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_7_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_7_2_1'
+
+        # Sell signal 8
+        elif (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.08):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_8_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bull_8_2_1'
+
+        return False, None
+
+    def exit_pump_bull_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if (last_candle['close'] > last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 20.0):
+                    return True, 'exit_pump_bull_o_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 28.0):
+                    return True, 'exit_pump_bull_o_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_pump_bull_o_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_pump_bull_o_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_pump_bull_o_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_pump_bull_o_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_pump_bull_o_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_pump_bull_o_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_pump_bull_o_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bull_o_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bull_o_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bull_o_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_pump_bull_o_12'
+        elif (last_candle['close'] < last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 22.0):
+                    return True, 'exit_pump_bull_u_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_pump_bull_u_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_pump_bull_u_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_pump_bull_u_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_pump_bull_u_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_pump_bull_u_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_pump_bull_u_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_pump_bull_u_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bull_u_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bull_u_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_pump_bull_u_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bull_u_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bull_u_12'
+
+        return False, None
+
+    def exit_pump_bull_r(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if 0.01 > current_profit >= 0.001:
+            if (last_candle['r_480'] > -0.1):
+                return True, 'exit_pump_bull_w_0_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_0_2'
+        elif 0.02 > current_profit >= 0.01:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_pump_bull_w_1_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_1_2'
+        elif 0.03 > current_profit >= 0.02:
+            if (last_candle['r_480'] > -0.3):
+                return True, 'exit_pump_bull_w_2_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_2_2'
+        elif 0.04 > current_profit >= 0.03:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_pump_bull_w_3_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_3_2'
+        elif 0.05 > current_profit >= 0.04:
+            if (last_candle['r_480'] > -0.5):
+                return True, 'exit_pump_bull_w_4_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_4_2'
+        elif 0.06 > current_profit >= 0.05:
+            if (last_candle['r_480'] > -0.6):
+                return True, 'exit_pump_bull_w_5_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_5_2'
+        elif 0.07 > current_profit >= 0.06:
+            if (last_candle['r_480'] > -0.7):
+                return True, 'exit_pump_bull_w_6_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_6_2'
+        elif 0.08 > current_profit >= 0.07:
+            if (last_candle['r_480'] > -0.8):
+                return True, 'exit_pump_bull_w_7_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_7_2'
+        elif 0.09 > current_profit >= 0.08:
+            if (last_candle['r_480'] > -0.9):
+                return True, 'exit_pump_bull_w_8_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_8_2'
+        elif 0.1 > current_profit >= 0.09:
+            if (last_candle['r_480'] > -1.0):
+                return True, 'exit_pump_bull_w_9_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_9_2'
+        elif 0.12 > current_profit >= 0.1:
+            if (last_candle['r_480'] > -1.1):
+                return True, 'exit_pump_bull_w_10_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_10_2'
+        elif 0.2 > current_profit >= 0.12:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_pump_bull_w_11_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bull_w_11_2'
+        elif current_profit >= 0.2:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_pump_bull_w_12_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 80.0):
+                return True, 'exit_pump_bull_w_12_2'
+
+        return False, None
+
+    def exit_pump_bull_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Stoploss doom
+        if (
+                (current_profit < -0.1)
+        ):
+            return True, 'exit_pump_bull_stoploss_doom'
+
+        return False, None
+
+    def exit_pump_bear(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
+
+        # Original sell signals
+        sell, signal_name = self.exit_pump_bear_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Main sell signals
+        if not sell:
+            sell, signal_name = self.exit_pump_bear_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Williams %R based sells
+        if not sell:
+            sell, signal_name = self.exit_pump_bear_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Stoplosses
+        if not sell:
+            sell, signal_name = self.exit_pump_bear_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.pump_bear_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.pump_bear_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.pump_bear_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.03)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_pump_bear_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_pump_bear_max", "exit_pump_bear_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
+
+        return False, None
+
+    def pump_bear_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def pump_bear_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_pump_bear_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_pump_bear_max"]):
+            if (current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
+
+    def exit_pump_bear_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Sell signal 1
+        if (last_candle['rsi_14'] > 78.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_1_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_1_2_1'
+
+        # Sell signal 2
+        elif (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_2_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_2_2_1'
+
+        # Sell signal 3
+        elif (last_candle['rsi_14'] > 84.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_3_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_3_2_1'
+
+        # Sell signal 4
+        elif (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_1h'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_4_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_4_2_1'
+
+        # Sell signal 6
+        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 78.5):
+            if (current_profit > 0.01):
+                return True, 'exit_pump_bear_6_1'
+
+        # Sell signal 7
+        elif (last_candle['rsi_14_1h'] > 79.0) and (last_candle['crossed_below_ema_12_26']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_7_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_7_2_1'
+
+        # Sell signal 8
+        elif (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.07) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_8_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_pump_bear_8_2_1'
+
+        return False, None
+
+    def exit_pump_bear_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if (last_candle['close'] > last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 22.0):
+                    return True, 'exit_pump_bear_o_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_pump_bear_o_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_pump_bear_o_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_pump_bear_o_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_pump_bear_o_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_pump_bear_o_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_pump_bear_o_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_pump_bear_o_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bear_o_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bear_o_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_pump_bear_o_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bear_o_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bear_o_12'
+        elif (last_candle['close'] < last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 24.0):
+                    return True, 'exit_pump_bear_u_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_pump_bear_u_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_pump_bear_u_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_pump_bear_u_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_pump_bear_u_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_pump_bear_u_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_pump_bear_u_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_pump_bear_u_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bear_u_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_pump_bear_u_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 50.0):
+                    return True, 'exit_pump_bear_u_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_pump_bear_u_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_pump_bear_u_12'
+
+        return False, None
+
+    def exit_pump_bear_r(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if 0.01 > current_profit >= 0.001:
+            if (last_candle['r_480'] > -0.1):
+                return True, 'exit_pump_bear_w_0_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_0_2'
+        elif 0.02 > current_profit >= 0.01:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_pump_bear_w_1_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_1_2'
+        elif 0.03 > current_profit >= 0.02:
+            if (last_candle['r_480'] > -0.3):
+                return True, 'exit_pump_bear_w_2_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_2_2'
+        elif 0.04 > current_profit >= 0.03:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_pump_bear_w_3_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_3_2'
+        elif 0.05 > current_profit >= 0.04:
+            if (last_candle['r_480'] > -0.5):
+                return True, 'exit_pump_bear_w_4_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_4_2'
+        elif 0.06 > current_profit >= 0.05:
+            if (last_candle['r_480'] > -0.6):
+                return True, 'exit_pump_bear_w_5_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_5_2'
+        elif 0.07 > current_profit >= 0.06:
+            if (last_candle['r_480'] > -0.7):
+                return True, 'exit_pump_bear_w_6_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_6_2'
+        elif 0.08 > current_profit >= 0.07:
+            if (last_candle['r_480'] > -0.8):
+                return True, 'exit_pump_bear_w_7_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_7_2'
+        elif 0.09 > current_profit >= 0.08:
+            if (last_candle['r_480'] > -0.9):
+                return True, 'exit_pump_bear_w_8_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_8_2'
+        elif 0.1 > current_profit >= 0.09:
+            if (last_candle['r_480'] > -1.0):
+                return True, 'exit_pump_bear_w_9_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_9_2'
+        elif 0.12 > current_profit >= 0.1:
+            if (last_candle['r_480'] > -1.1):
+                return True, 'exit_pump_bear_w_10_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_10_2'
+        elif 0.2 > current_profit >= 0.12:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_pump_bear_w_11_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_pump_bear_w_11_2'
+        elif current_profit >= 0.2:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_pump_bear_w_12_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 80.0):
+                return True, 'exit_pump_bear_w_12_2'
+
+        return False, None
+
+    def exit_pump_bear_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Stoploss doom
+        if (
+                (current_profit < -0.1)
+        ):
+            return True, 'exit_pump_bear_stoploss_doom'
+
+        return False, None
+
+    def exit_quick_bull(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
+
+        # Original sell signals
+        sell, signal_name = self.exit_quick_bull_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Main sell signals
+        if not sell:
+            sell, signal_name = self.exit_quick_bull_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Williams %R based sells
+        if not sell:
+            sell, signal_name = self.exit_quick_bull_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Stoplosses
+        if not sell:
+            sell, signal_name = self.exit_quick_bull_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.quick_bull_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.quick_bull_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.quick_bull_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.025)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_quick_bull_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_quick_bull_max", "exit_quick_bull_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
+
+        return False, None
+
+    def quick_bull_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def quick_bull_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_quick_bull_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_quick_bull_max"]):
+            if (current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
+
+    def exit_quick_bull_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Sell signal 1
+        if (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_1_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_1_2_1'
+
+        # Sell signal 2
+        elif (last_candle['rsi_14'] > 80.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_2_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_2_2_1'
+
+        # Sell signal 3
+        elif (last_candle['rsi_14'] > 85.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_3_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_3_2_1'
+
+        # Sell signal 4
+        elif (last_candle['rsi_14'] > 80.0) and (last_candle['rsi_14_1h'] > 80.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_4_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_4_2_1'
+
+        # Sell signal 6
+        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 79.0):
+            if (current_profit > 0.01):
+                return True, 'exit_quick_bull_6_1'
+
+        # Sell signal 7
+        elif (last_candle['rsi_14_1h'] > 79.0) and (last_candle['crossed_below_ema_12_26']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_7_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_7_2_1'
+
+        # Sell signal 8
+        elif (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.08):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_8_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bull_8_2_1'
+
+        return False, None
+
+    def exit_quick_bull_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if (last_candle['close'] > last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 20.0):
+                    return True, 'exit_quick_bull_o_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 28.0):
+                    return True, 'exit_quick_bull_o_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_quick_bull_o_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_quick_bull_o_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_quick_bull_o_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_quick_bull_o_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_quick_bull_o_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_quick_bull_o_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_quick_bull_o_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bull_o_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bull_o_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bull_o_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_quick_bull_o_12'
+        elif (last_candle['close'] < last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 22.0):
+                    return True, 'exit_quick_bull_u_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_quick_bull_u_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_quick_bull_u_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_quick_bull_u_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_quick_bull_u_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_quick_bull_u_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_quick_bull_u_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_quick_bull_u_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bull_u_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bull_u_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_quick_bull_u_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bull_u_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bull_u_12'
+
+        return False, None
+
+    def exit_quick_bull_r(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if 0.01 > current_profit >= 0.001:
+            if (last_candle['r_480'] > -0.1):
+                return True, 'exit_quick_bull_w_0_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_0_2'
+        elif 0.02 > current_profit >= 0.01:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_quick_bull_w_1_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_1_2'
+        elif 0.03 > current_profit >= 0.02:
+            if (last_candle['r_480'] > -0.3):
+                return True, 'exit_quick_bull_w_2_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_2_2'
+        elif 0.04 > current_profit >= 0.03:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_quick_bull_w_3_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_3_2'
+        elif 0.05 > current_profit >= 0.04:
+            if (last_candle['r_480'] > -0.5):
+                return True, 'exit_quick_bull_w_4_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_4_2'
+        elif 0.06 > current_profit >= 0.05:
+            if (last_candle['r_480'] > -0.6):
+                return True, 'exit_quick_bull_w_5_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_5_2'
+        elif 0.07 > current_profit >= 0.06:
+            if (last_candle['r_480'] > -0.7):
+                return True, 'exit_quick_bull_w_6_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_6_2'
+        elif 0.08 > current_profit >= 0.07:
+            if (last_candle['r_480'] > -0.8):
+                return True, 'exit_quick_bull_w_7_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_7_2'
+        elif 0.09 > current_profit >= 0.08:
+            if (last_candle['r_480'] > -0.9):
+                return True, 'exit_quick_bull_w_8_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_8_2'
+        elif 0.1 > current_profit >= 0.09:
+            if (last_candle['r_480'] > -1.0):
+                return True, 'exit_quick_bull_w_9_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_9_2'
+        elif 0.12 > current_profit >= 0.1:
+            if (last_candle['r_480'] > -1.1):
+                return True, 'exit_quick_bull_w_10_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_10_2'
+        elif 0.2 > current_profit >= 0.12:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_quick_bull_w_11_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bull_w_11_2'
+        elif current_profit >= 0.2:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_quick_bull_w_12_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 80.0):
+                return True, 'exit_quick_bull_w_12_2'
+
+        return False, None
+
+    def exit_quick_bull_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Stoploss doom
+        if (
+                (current_profit < -0.1)
+        ):
+            return True, 'exit_quick_bull_stoploss_doom'
+
+        return False, None
+
+    def exit_quick_bear(self, pair: str, current_rate: float, current_profit: float,
+                         max_profit: float, max_loss: float,
+                         last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
+                         trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
+        sell = False
+
+        # Original sell signals
+        sell, signal_name = self.exit_quick_bear_signals(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Main sell signals
+        if not sell:
+            sell, signal_name = self.exit_quick_bear_main(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Williams %R based sells
+        if not sell:
+            sell, signal_name = self.exit_quick_bear_r(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Stoplosses
+        if not sell:
+            sell, signal_name = self.exit_quick_bear_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+
+        # Profit Target Signal
+        # Check if pair exist on target_profit_cache
+        if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+            previous_rate = self.target_profit_cache.data[pair]['rate']
+            previous_profit = self.target_profit_cache.data[pair]['profit']
+            previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
+            previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
+
+            sell_max, signal_name_max = self.quick_bear_exit_profit_target(pair, trade, current_time, current_rate, current_profit,
+                                                                            last_candle, previous_candle_1,
+                                                                            previous_rate, previous_profit, previous_sell_reason,
+                                                                            previous_time_profit_reached, enter_tags)
+            if sell_max and signal_name_max is not None:
+                return True, f"{signal_name_max}_m"
+            if (current_profit > (previous_profit + 0.03)):
+                # Update the target, raise it.
+                mark_pair, mark_signal = self.quick_bear_mark_profit_target(pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        # Add the pair to the list, if a sell triggered and conditions met
+        if sell and signal_name is not None:
+            previous_profit = None
+            if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                previous_profit = self.target_profit_cache.data[pair]['profit']
+            if (
+                    (previous_profit is None)
+                    or (previous_profit < current_profit)
+            ):
+                mark_pair, mark_signal = self.quick_bear_mark_profit_target(pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+        else:
+            if (
+                    (current_profit >= 0.025)
+            ):
+                previous_profit = None
+                if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
+                    previous_profit = self.target_profit_cache.data[pair]['profit']
+                if (previous_profit is None) or (previous_profit < current_profit):
+                    mark_signal = "exit_profit_quick_bear_max"
+                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+
+        if (signal_name not in ["exit_profit_quick_bear_max", "exit_quick_bear_stoploss_doom"]):
+            if sell and (signal_name is not None):
+                return True, f"{signal_name}"
+
+        return False, None
+
+    def quick_bear_mark_profit_target(self, pair: str, sell: bool, signal_name: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1) -> tuple:
+        if sell and (signal_name is not None):
+            return pair, signal_name
+
+        return None, None
+
+    def quick_bear_exit_profit_target(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+        if (previous_sell_reason in ["exit_quick_bear_stoploss_doom"]):
+            if (current_profit > 0.04):
+                # profit is over the threshold, don't exit
+                self._remove_profit_target(pair)
+                return False, None
+            if (current_profit < -0.18):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.1):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (current_profit < -0.04):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            else:
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+        elif (previous_sell_reason in ["exit_profit_quick_bear_max"]):
+            if (current_profit < 0.01):
+                if (current_profit < (previous_profit - 0.01)):
+                    return True, previous_sell_reason
+            elif (0.01 <= current_profit < 0.02):
+                if (current_profit < (previous_profit - 0.02)):
+                    return True, previous_sell_reason
+            elif (0.02 <= current_profit < 0.03):
+                if (current_profit < (previous_profit - 0.03)):
+                    return True, previous_sell_reason
+            elif (0.03 <= current_profit < 0.05):
+                if (current_profit < (previous_profit - 0.04)):
+                    return True, previous_sell_reason
+            elif (0.05 <= current_profit < 0.08):
+                if (current_profit < (previous_profit - 0.05)):
+                    return True, previous_sell_reason
+            elif (0.08 <= current_profit < 0.12):
+                if (current_profit < (previous_profit - 0.06)):
+                    return True, previous_sell_reason
+            elif (0.12 <= current_profit):
+                if (current_profit < (previous_profit - 0.07)):
+                    return True, previous_sell_reason
+        else:
+            return False, None
+
+        return False, None
+
+    def exit_quick_bear_signals(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Sell signal 1
+        if (last_candle['rsi_14'] > 78.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']) and (previous_candle_3['close'] > previous_candle_3['bb20_2_upp']) and (previous_candle_4['close'] > previous_candle_4['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_1_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_1_2_1'
+
+        # Sell signal 2
+        elif (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0) and (last_candle['close'] > last_candle['bb20_2_upp']) and (previous_candle_1['close'] > previous_candle_1['bb20_2_upp']) and (previous_candle_2['close'] > previous_candle_2['bb20_2_upp']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_2_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_2_2_1'
+
+        # Sell signal 3
+        elif (last_candle['rsi_14'] > 84.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_3_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_3_2_1'
+
+        # Sell signal 4
+        elif (last_candle['rsi_14'] > 79.0) and (last_candle['rsi_14_1h'] > 79.0) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_4_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_4_2_1'
+
+        # Sell signal 6
+        elif (last_candle['close'] < last_candle['ema_200']) and (last_candle['close'] > last_candle['ema_50']) and (last_candle['rsi_14'] > 78.5):
+            if (current_profit > 0.01):
+                return True, 'exit_quick_bear_6_1'
+
+        # Sell signal 7
+        elif (last_candle['rsi_14_1h'] > 79.0) and (last_candle['crossed_below_ema_12_26']):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_7_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_7_2_1'
+
+        # Sell signal 8
+        elif (last_candle['close'] > last_candle['bb20_2_upp_1h'] * 1.07) and (last_candle['rsi_14_4h'] > 75.0):
+            if (last_candle['close'] > last_candle['ema_200']):
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_8_1_1'
+            else:
+                if (current_profit > 0.01):
+                    return True, 'exit_quick_bear_8_2_1'
+
+        return False, None
+
+    def exit_quick_bear_main(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if (last_candle['close'] > last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 22.0):
+                    return True, 'exit_quick_bear_o_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 30.0):
+                    return True, 'exit_quick_bear_o_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_quick_bear_o_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_quick_bear_o_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_quick_bear_o_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_quick_bear_o_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_quick_bear_o_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_quick_bear_o_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bear_o_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bear_o_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_quick_bear_o_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bear_o_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bear_o_12'
+        elif (last_candle['close'] < last_candle['sma_200_1h']):
+            if 0.01 > current_profit >= 0.001:
+                if (last_candle['rsi_14'] < 24.0):
+                    return True, 'exit_quick_bear_u_0'
+            elif 0.02 > current_profit >= 0.01:
+                if (last_candle['rsi_14'] < 32.0):
+                    return True, 'exit_quick_bear_u_1'
+            elif 0.03 > current_profit >= 0.02:
+                if (last_candle['rsi_14'] < 34.0):
+                    return True, 'exit_quick_bear_u_2'
+            elif 0.04 > current_profit >= 0.03:
+                if (last_candle['rsi_14'] < 36.0):
+                    return True, 'exit_quick_bear_u_3'
+            elif 0.05 > current_profit >= 0.04:
+                if (last_candle['rsi_14'] < 38.0):
+                    return True, 'exit_quick_bear_u_4'
+            elif 0.06 > current_profit >= 0.05:
+                if (last_candle['rsi_14'] < 40.0):
+                    return True, 'exit_quick_bear_u_5'
+            elif 0.07 > current_profit >= 0.06:
+                if (last_candle['rsi_14'] < 42.0):
+                    return True, 'exit_quick_bear_u_6'
+            elif 0.08 > current_profit >= 0.07:
+                if (last_candle['rsi_14'] < 44.0):
+                    return True, 'exit_quick_bear_u_7'
+            elif 0.09 > current_profit >= 0.08:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bear_u_8'
+            elif 0.1 > current_profit >= 0.09:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_quick_bear_u_9'
+            elif 0.12 > current_profit >= 0.1:
+                if (last_candle['rsi_14'] < 50.0):
+                    return True, 'exit_quick_bear_u_10'
+            elif 0.2 > current_profit >= 0.12:
+                if (last_candle['rsi_14'] < 48.0):
+                    return True, 'exit_quick_bear_u_11'
+            elif current_profit >= 0.2:
+                if (last_candle['rsi_14'] < 46.0):
+                    return True, 'exit_quick_bear_u_12'
+
+        return False, None
+
+    def exit_quick_bear_r(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        if 0.01 > current_profit >= 0.001:
+            if (last_candle['r_480'] > -0.1):
+                return True, 'exit_quick_bear_w_0_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_0_2'
+        elif 0.02 > current_profit >= 0.01:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_quick_bear_w_1_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_1_2'
+        elif 0.03 > current_profit >= 0.02:
+            if (last_candle['r_480'] > -0.3):
+                return True, 'exit_quick_bear_w_2_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_2_2'
+        elif 0.04 > current_profit >= 0.03:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_quick_bear_w_3_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_3_2'
+        elif 0.05 > current_profit >= 0.04:
+            if (last_candle['r_480'] > -0.5):
+                return True, 'exit_quick_bear_w_4_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_4_2'
+        elif 0.06 > current_profit >= 0.05:
+            if (last_candle['r_480'] > -0.6):
+                return True, 'exit_quick_bear_w_5_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_5_2'
+        elif 0.07 > current_profit >= 0.06:
+            if (last_candle['r_480'] > -0.7):
+                return True, 'exit_quick_bear_w_6_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_6_2'
+        elif 0.08 > current_profit >= 0.07:
+            if (last_candle['r_480'] > -0.8):
+                return True, 'exit_quick_bear_w_7_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_7_2'
+        elif 0.09 > current_profit >= 0.08:
+            if (last_candle['r_480'] > -0.9):
+                return True, 'exit_quick_bear_w_8_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_8_2'
+        elif 0.1 > current_profit >= 0.09:
+            if (last_candle['r_480'] > -1.0):
+                return True, 'exit_quick_bear_w_9_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_9_2'
+        elif 0.12 > current_profit >= 0.1:
+            if (last_candle['r_480'] > -1.1):
+                return True, 'exit_quick_bear_w_10_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_10_2'
+        elif 0.2 > current_profit >= 0.12:
+            if (last_candle['r_480'] > -0.4):
+                return True, 'exit_quick_bear_w_11_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 79.0):
+                return True, 'exit_quick_bear_w_11_2'
+        elif current_profit >= 0.2:
+            if (last_candle['r_480'] > -0.2):
+                return True, 'exit_quick_bear_w_12_1'
+            elif (last_candle['r_14'] >= -1.0) and (last_candle['rsi_14'] > 80.0):
+                return True, 'exit_quick_bear_w_12_2'
+
+        return False, None
+
+    def exit_quick_bear_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        # Stoploss doom
+        if (
+                (current_profit < -0.1)
+        ):
+            return True, 'exit_quick_bear_stoploss_doom'
 
         return False, None
 
@@ -887,6 +2299,30 @@ class NostalgiaForInfinityX2(IStrategy):
         # Normal mode, bear
         if any(c in self.normal_mode_bear_tags for c in enter_tags):
             sell, signal_name = self.exit_normal_bear(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            if sell and (signal_name is not None):
+                return f"{signal_name} ( {enter_tag})"
+
+        # Pump mpde, bull
+        if any(c in self.pump_mode_bull_tags for c in enter_tags):
+            sell, signal_name = self.exit_pump_bull(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            if sell and (signal_name is not None):
+                return f"{signal_name} ( {enter_tag})"
+
+        # Pump mode, bear
+        if any(c in self.pump_mode_bear_tags for c in enter_tags):
+            sell, signal_name = self.exit_pump_bear(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            if sell and (signal_name is not None):
+                return f"{signal_name} ( {enter_tag})"
+
+        # Quick mode, bull
+        if any(c in self.quick_mode_bull_tags for c in enter_tags):
+            sell, signal_name = self.exit_quick_bull(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            if sell and (signal_name is not None):
+                return f"{signal_name} ( {enter_tag})"
+
+        # Quick mode, bear
+        if any(c in self.quick_mode_bear_tags for c in enter_tags):
+            sell, signal_name = self.exit_quick_bear(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
@@ -948,6 +2384,8 @@ class NostalgiaForInfinityX2(IStrategy):
         # RSI
         informative_4h['rsi_14'] = ta.RSI(informative_4h, timeperiod=14, fillna=True)
 
+        informative_4h['rsi_14_max_6'] = informative_4h['rsi_14'].rolling(6).max()
+
         # EMA
         informative_4h['ema_12'] = ta.EMA(informative_4h, timeperiod=12)
         informative_4h['ema_26'] = ta.EMA(informative_4h, timeperiod=26)
@@ -978,11 +2416,21 @@ class NostalgiaForInfinityX2(IStrategy):
         # Downtrend checks
         informative_4h['not_downtrend'] = ((informative_4h['close'] > informative_4h['close'].shift(2)) | (informative_4h['rsi_14'] > 50.0))
 
+        # Wicks
+        informative_4h['top_wick_pct'] = ((informative_4h['high'] - np.maximum(informative_4h['open'], informative_4h['close'])) / np.maximum(informative_4h['open'], informative_4h['close']))
+
+        # Candle change
+        informative_4h['change_pct'] = (informative_4h['close'] - informative_4h['open']) / informative_4h['open']
+
         # Max highs
         informative_4h['high_max_3'] = informative_4h['high'].rolling(3).max()
         informative_4h['high_max_12'] = informative_4h['high'].rolling(12).max()
 
+        informative_4h['pct_change_high_max_1_12'] = (informative_4h['high'] - informative_4h['high_max_12']) / informative_4h['high_max_12']
         informative_4h['pct_change_high_max_3_12'] = (informative_4h['high_max_3'] - informative_4h['high_max_12']) / informative_4h['high_max_12']
+
+        # Volume
+        informative_4h['volume_mean_factor_6'] = informative_4h['volume'] / informative_4h['volume'].rolling(6).mean()
 
         # Performance logging
         # -----------------------------------------------------------------------------------------
@@ -1051,13 +2499,28 @@ class NostalgiaForInfinityX2(IStrategy):
         # Downtrend checks
         informative_1h['not_downtrend'] = ((informative_1h['close'] > informative_1h['close'].shift(2)) | (informative_1h['rsi_14'] > 50.0))
 
+        informative_1h['is_downtrend_3'] = ((informative_1h['close'] < informative_1h['open']) & (informative_1h['close'].shift(1) < informative_1h['open'].shift(1)) & (informative_1h['close'].shift(2) < informative_1h['open'].shift(2)))
+
+        informative_1h['is_downtrend_5'] = ((informative_1h['close'] < informative_1h['open']) & (informative_1h['close'].shift(1) < informative_1h['open'].shift(1)) & (informative_1h['close'].shift(2) < informative_1h['open'].shift(2)) & (informative_1h['close'].shift(3) < informative_1h['open'].shift(3)) & (informative_1h['close'].shift(4) < informative_1h['open'].shift(4)))
+
+        # Wicks
+        informative_1h['top_wick_pct'] = ((informative_1h['high'] - np.maximum(informative_1h['open'], informative_1h['close'])) / np.maximum(informative_1h['open'], informative_1h['close']))
+
+        # Candle change
+        informative_1h['change_pct'] = (informative_1h['close'] - informative_1h['open']) / informative_1h['open']
+
         # Max highs
+        informative_1h['high_max_3'] = informative_1h['high'].rolling(3).max()
         informative_1h['high_max_6'] = informative_1h['high'].rolling(6).max()
         informative_1h['high_max_12'] = informative_1h['high'].rolling(12).max()
         informative_1h['high_max_24'] = informative_1h['high'].rolling(24).max()
 
+        informative_1h['pct_change_high_max_3_12'] = (informative_1h['high_max_3'] - informative_1h['high_max_12']) / informative_1h['high_max_12']
         informative_1h['pct_change_high_max_6_12'] = (informative_1h['high_max_6'] - informative_1h['high_max_12']) / informative_1h['high_max_12']
         informative_1h['pct_change_high_max_6_24'] = (informative_1h['high_max_6'] - informative_1h['high_max_24']) / informative_1h['high_max_24']
+
+        # Volume
+        informative_1h['volume_mean_factor_12'] = informative_1h['volume'] / informative_1h['volume'].rolling(12).mean()
 
         # Performance logging
         # -----------------------------------------------------------------------------------------
@@ -1079,10 +2542,22 @@ class NostalgiaForInfinityX2(IStrategy):
         # RSI
         informative_15m['rsi_14'] = ta.RSI(informative_15m, timeperiod=14)
 
+        # SMA
+        informative_15m['sma_200'] = ta.SMA(informative_15m, timeperiod=200)
+
+        # CTI
+        informative_15m['cti_20'] = pta.cti(informative_15m["close"], length=20)
+
         # CRSI
         crsi_closechange = informative_15m['close'] / informative_15m['close'].shift(1)
         crsi_updown = np.where(crsi_closechange.gt(1), 1.0, np.where(crsi_closechange.lt(1), -1.0, 0.0))
         informative_15m['crsi'] =  (ta.RSI(informative_15m['close'], timeperiod=3) + ta.RSI(crsi_updown, timeperiod=2) + crsi_closechange.rolling(window=101).apply(lambda x: len(x[x < x.iloc[-1]]) / (len(x)-1))) / 3
+
+        # Downtrend check
+        informative_15m['not_downtrend'] = ((informative_15m['close'] > informative_15m['open']) | (informative_15m['close'].shift(1) > informative_15m['open'].shift(1)) | (informative_15m['close'].shift(2) > informative_15m['open'].shift(2)) | (informative_15m['rsi_14'] > 50.0) | (informative_15m['crsi'] > 20.0))
+
+        # Volume
+        informative_15m['volume_mean_factor_12'] = informative_15m['volume'] / informative_15m['volume'].rolling(12).mean()
 
         # Performance logging
         # -----------------------------------------------------------------------------------------
@@ -1150,6 +2625,8 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Close max
         dataframe['close_max_48'] = dataframe['close'].rolling(48).max()
+        dataframe['close_max_72'] = dataframe['close'].rolling(72).max()
+        dataframe['close_max_144'] = dataframe['close'].rolling(144).max()
 
         dataframe['pct_close_max_48'] = (dataframe['close_max_48'] - dataframe['close']) / dataframe['close']
 
@@ -1409,7 +2886,16 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append(dataframe['r_480_4h'] < -25.0)
 
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append((dataframe['is_downtrend_3_1h'] == False)
+                                          | (dataframe['crsi_1h'] > 20.0))
+                    item_buy_logic.append(dataframe['is_downtrend_5_1h'] == False)
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    # current 4h red with top long wick,
+                    # previous 4h red, 2nd previous 4h red
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.01)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 5.0))
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.01)
+                                          | (dataframe['change_pct_4h'].shift(96) > -0.01))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -1423,28 +2909,55 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append(dataframe['btc_is_bull_4h'])
                     item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['high_max_12_1h'] < (dataframe['close'] * 1.5))
 
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
-
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
                     item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
 
-                    item_buy_logic.append(dataframe['r_480_4h'] < -25.0)
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.88)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 80.0)
 
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.1)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.1)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 80.0))
+                    # current 4h red, previous 4h green with top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > 0.0)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 4.0))
+                                          | (dataframe['rsi_14_4h'] < 50.0))
+                    # current 4h gree with top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.04)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['rsi_14_4h'] < 50.0))
+                    # current 4h with long top wick
+                    item_buy_logic.append(dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 8.0))
+                    item_buy_logic.append((dataframe['pct_change_high_max_3_12_1h'] > -0.12)
+                                          | (dataframe['cti_20_1h'] < 0.8)
+                                          | (dataframe['volume_mean_factor_12_1h'] > 0.1))
+                    # current 4h red, previous 4h green
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.05)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.05)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 80.0))
+                    # current 4h green with wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.05)
+                                          | (dataframe['top_wick_pct_4h'] < 0.05)
+                                          | (dataframe['rsi_14_4h'] < 70.0)
+                                          | (dataframe['r_480_1h'] < -16.0))
+                    # current 4h red, previous 4h green with top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.04)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['high_max_12_1h'] < (dataframe['close'] * 1.3)))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.02))
                     item_buy_logic.append(dataframe['close_delta'].gt(dataframe['close'] * 0.02))
-                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.1))
+                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.18))
                     item_buy_logic.append(dataframe['close'].lt(dataframe['bb40_2_low'].shift()))
                     item_buy_logic.append(dataframe['close'].le(dataframe['close'].shift()))
 
@@ -1456,29 +2969,30 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
                     item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.26))
 
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
                     item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
 
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
                     item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
 
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    # current 4h green with wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.1)
+                                          | (dataframe['top_wick_pct_4h'] < 0.16)
+                                          | (dataframe['rsi_14_4h'] < 70.0))
+                    # current 4h red with top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > 0.0)
+                                          | (dataframe['top_wick_pct_4h'] < 0.1)
+                                          | (dataframe['ema_12_4h'] > dataframe['ema_200_4h']))
 
                     # Logic
-                    item_buy_logic.append(dataframe['ema_50'] > (dataframe['ema_200'] * 1.02))
-                    item_buy_logic.append(dataframe['sma_50'] > (dataframe['sma_200'] * 1.02))
                     item_buy_logic.append(dataframe['close'] > (dataframe['ema_200'] * 0.95))
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_200'] * 1.1))
                     item_buy_logic.append(dataframe['rsi_14'] < 36.0)
                     item_buy_logic.append(dataframe['ha_close'] > dataframe['ha_open'])
-                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.026))
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02))
 
                 # Condition #4 - Normal mode bull.
                 if index == 4:
@@ -1505,35 +3019,159 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
                     item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 0.996))
 
+                # Condition #5 - Normal mode bull.
+                if index == 5:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'])
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 85.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03))
+                    item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
+
+                # Condition #6 - Normal mode bull.
+                if index == 6:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'])
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 85.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    # current 4h red and previous green with long top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+                    # current 4h red and previous green with high RSI
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.1)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.1)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 75.0))
+                    # current 4h green and RSI high SMA 200 is negative
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.12)
+                                          | (dataframe['rsi_14_4h'] < 70.0)
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # curent 4h and previous 4h red and RSI in last 6 4h high,
+                    # low volume on current 4h
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.04)
+                                          | (dataframe['rsi_14_max_6_4h'] < 80.0)
+                                          | (dataframe['volume_mean_factor_6_4h'] > 0.7))
+                    # current 4h green with top wick, previous 4h red, 24 pump
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.02)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.02)
+                                          | (dataframe['hl_pct_change_48_1h'] < 0.5))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < 0.9)
+                                          | (dataframe['cti_20_1h'] < 0.8))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.7)
+                                          | (dataframe['r_14_4h'] < -25.0)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # current 1h red, previous 1h green
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.04)
+                                          | (dataframe['change_pct_1h'].shift(12) < 0.04)
+                                          |(dataframe['cti_20_1h'].shift(12) < 0.8)
+                                          | (dataframe['r_14_1h'].shift(12) < -10.0)
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    item_buy_logic.append((dataframe['crsi_15m'] > 10.0)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # curent 1h red, previous 1h long green with top wick
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.04) |
+                                          (dataframe['change_pct_1h'].shift(12) < 0.08) |
+                                          (dataframe['top_wick_pct_1h'].shift(12) < 0.08) |
+                                          (dataframe['rsi_14_1h'].shift(12) < 85.0))
+                    item_buy_logic.append((dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+                                          | (dataframe['volume_mean_factor_12_15m'] > 0.1))
+                    # current 1h red and CTI 1h high
+                    # current 4h red and CTI 4h high
+                    # previous 4h green and CTI 4h high
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.02)
+                                          | (dataframe['cti_20_1h'] < 0.85)
+                                          | (dataframe['change_pct_4h'] > -0.08)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['cti_20_4h'].shift(48) < 0.8))
+                    # current 4h with very long top wick
+                    item_buy_logic.append((dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 20.0)))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.8)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['close'] < (dataframe['ema_26'] * 0.94))
+                    item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 0.996))
+
                 # Condition #11 - Normal mode bear.
                 if index == 11:
                     # Protections
                     item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
                     item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
-                    item_buy_logic.append((dataframe['tpct_change_2'] < 0.06))
                     item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
-                    item_buy_logic.append(dataframe['hl_pct_change_36'] < 0.3)
                     item_buy_logic.append(dataframe['hl_pct_change_24_1h'] < 3.0)
 
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
+                    item_buy_logic.append(dataframe['sma_200'] > dataframe['sma_200'].shift(36))
+                    item_buy_logic.append(dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(48))
+                    item_buy_logic.append(dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
 
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
-
-                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.85)
-                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
-                    item_buy_logic.append(dataframe['rsi_14_1h'] < 65.0)
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.88)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.88)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 80.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 80.0)
+                    item_buy_logic.append(dataframe['r_14_4h'] < -5.0)
 
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append((dataframe['is_downtrend_3_1h'] == False)
+                                          | (dataframe['crsi_1h'] > 20.0))
+                    item_buy_logic.append(dataframe['is_downtrend_5_1h'] == False)
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append(dataframe['top_wick_pct_4h'] < 0.24)
+                    item_buy_logic.append((dataframe['top_wick_pct_4h'] < 0.1)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.2)
+                                          | (dataframe['top_wick_pct_4h'].shift(96) < 0.2))
+                    # current 4h red with top long wick,
+                    # previous 4h red, 2nd previous 4h red
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.01)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 5.0))
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.01)
+                                          | (dataframe['change_pct_4h'].shift(96) > -0.01))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -1547,32 +3185,53 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
                     item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.025)
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.025)
-                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.2))
-                    item_buy_logic.append(dataframe['hl_pct_change_36'] < 0.2)
-                    item_buy_logic.append(dataframe['hl_pct_change_12_1h'] < 0.5)
-                    item_buy_logic.append(dataframe['hl_pct_change_48_1h'] < 0.75)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['high_max_12_1h'] < (dataframe['close'] * 1.5))
 
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
                     item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
 
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
                     item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
 
-                    item_buy_logic.append(dataframe['r_480_4h'] < -25.0)
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 80.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 80.0)
 
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append((dataframe['pct_change_high_max_1_12_4h'] > -0.25)
+                                          | (dataframe['ema_12_4h'] > dataframe['ema_200_4h']))
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.1)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.1)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 80.0))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > 0.0)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 4.0))
+                                          | (dataframe['rsi_14_4h'] < 50.0))
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.04)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['rsi_14_4h'] < 50.0))
+                    item_buy_logic.append(dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 8.0))
+                    item_buy_logic.append((dataframe['pct_change_high_max_3_12_1h'] > -0.12)
+                                          | (dataframe['cti_20_1h'] < 0.8)
+                                          | (dataframe['volume_mean_factor_12_1h'] > 0.1))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.05)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.05)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 80.0))
+                    # current 4h red, previous 4h green with top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.04)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['high_max_12_1h'] < (dataframe['close'] * 1.3)))
 
                     # Logic
-                    item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.02))
-                    item_buy_logic.append(dataframe['close_delta'].gt(dataframe['close'] * 0.02))
-                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.1))
+                    item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.04))
+                    item_buy_logic.append(dataframe['close_delta'].gt(dataframe['close'] * 0.026))
+                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.4))
                     item_buy_logic.append(dataframe['close'].lt(dataframe['bb40_2_low'].shift()))
                     item_buy_logic.append(dataframe['close'].le(dataframe['close'].shift()))
 
@@ -1584,31 +3243,28 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.025)
                     item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.24))
 
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_26_1h'])
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
                     item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['ema_200_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_26_1h'])
-                    item_buy_logic.append(dataframe['sma_12_1h'] > dataframe['sma_200_1h'])
-                    item_buy_logic.append(dataframe['ema_12_1h'] > dataframe['sma_26_1h'])
 
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_26_4h'])
                     item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['ema_200_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_26_4h'])
-                    item_buy_logic.append(dataframe['sma_12_4h'] > dataframe['sma_200_4h'])
-                    item_buy_logic.append(dataframe['ema_12_4h'] > dataframe['sma_26_4h'])
 
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
                     item_buy_logic.append(dataframe['not_downtrend_1h'])
                     item_buy_logic.append(dataframe['not_downtrend_4h'])
-
-                    item_buy_logic.append(dataframe['crsi_1h'] > 16.0)
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.1)
+                                          | (dataframe['top_wick_pct_4h'] < 0.16)
+                                          | (dataframe['rsi_14_4h'] < 70.0))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > 0.0)
+                                          | (dataframe['top_wick_pct_4h'] < 0.1)
+                                          | (dataframe['ema_12_4h'] > dataframe['ema_200_4h']))
 
                     # Logic
-                    item_buy_logic.append(dataframe['ema_50'] > (dataframe['ema_200'] * 1.02))
-                    item_buy_logic.append(dataframe['sma_50'] > (dataframe['sma_200'] * 1.02))
                     item_buy_logic.append(dataframe['close'] > (dataframe['ema_200'] * 0.95))
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_200'] * 1.1))
                     item_buy_logic.append(dataframe['rsi_14'] < 36.0)
                     item_buy_logic.append(dataframe['ha_close'] > dataframe['ha_open'])
-                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.026))
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.024))
 
                 # Condition #14 - Normal mode bear.
                 if index == 14:
@@ -1634,6 +3290,269 @@ class NostalgiaForInfinityX2(IStrategy):
                     item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.018))
                     item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
                     item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 0.996))
+
+                # Condition #15 - Normal mode bear.
+                if index == 15:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 85.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03))
+                    item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
+
+                # Condition #16 - Normal mode bear.
+                if index == 16:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 85.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    # current 4h red and previous green with long top wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.16))
+                    # current 4h red and previous green with high RSI
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.1)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.1)
+                                          | (dataframe['rsi_14_4h'].shift(48) < 75.0))
+                    # current 4h green and RSI high SMA 200 is negative
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.12)
+                                          | (dataframe['rsi_14_4h'] < 70.0)
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # curent 4h and previous 4h red and RSI in last 6 4h high,
+                    # low volume on current 4h
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.04)
+                                          | (dataframe['rsi_14_max_6_4h'] < 80.0)
+                                          | (dataframe['volume_mean_factor_6_4h'] > 0.7))
+                    # current 4h green with top wick, previous 4h red, 24 pump
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.02)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['change_pct_4h'].shift(48) > -0.02)
+                                          | (dataframe['hl_pct_change_48_1h'] < 0.5))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < 0.9)
+                                          | (dataframe['cti_20_1h'] < 0.8))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.7)
+                                          | (dataframe['r_14_4h'] < -25.0)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # current 1h red, previous 1h green
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.04)
+                                          | (dataframe['change_pct_1h'].shift(12) < 0.04)
+                                          |(dataframe['cti_20_1h'].shift(12) < 0.8)
+                                          | (dataframe['r_14_1h'].shift(12) < -10.0)
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    item_buy_logic.append((dataframe['crsi_15m'] > 10.0)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+                    # curent 1h red, previous 1h long green with top wick
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.04) |
+                                          (dataframe['change_pct_1h'].shift(12) < 0.08) |
+                                          (dataframe['top_wick_pct_1h'].shift(12) < 0.08) |
+                                          (dataframe['rsi_14_1h'].shift(12) < 85.0))
+                    item_buy_logic.append((dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+                                          | (dataframe['volume_mean_factor_12_15m'] > 0.1))
+                    # current 1h red and CTI 1h high
+                    # current 4h red and CTI 4h high
+                    # previous 4h green and CTI 4h high
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.02)
+                                          | (dataframe['cti_20_1h'] < 0.85)
+                                          | (dataframe['change_pct_4h'] > -0.08)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['cti_20_4h'].shift(48) < 0.8))
+                    # current 4h with very long top wick
+                    item_buy_logic.append((dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 20.0)))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.8)
+                                          | (dataframe['sma_200_15m'] > dataframe['sma_200_15m'].shift(12))
+                                          | (dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                                          | (dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96)))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['close'] < (dataframe['ema_26'] * 0.94))
+                    item_buy_logic.append(dataframe['close'] < (dataframe['bb20_2_low'] * 0.996))
+
+                # Condition #21 - Pump mode bull.
+                if index == 21:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'])
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.2))
+                    item_buy_logic.append(dataframe['close_max_72'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['close_max_144'] < (dataframe['close'] * 1.3))
+
+                    item_buy_logic.append(dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(96))
+                    item_buy_logic.append(dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                    item_buy_logic.append(dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+
+                    item_buy_logic.append(dataframe['close'] > dataframe['ema_200'])
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 80.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 80.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append((dataframe['is_downtrend_3_1h'] == False)
+                                          | (dataframe['crsi_1h'] > 20.0))
+                    item_buy_logic.append(dataframe['is_downtrend_5_1h'] == False)
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    # current 4h red with top wick, previous 4h long green
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.12))
+                    # current 4h red, previous 4h green with wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.18)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['rsi_14_max_6_4h'] < 80.0))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.016))
+                    item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['rsi_14'] < 40.0)
+
+                # Condition #31 - Pump mode bear.
+                if index == 31:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.2))
+                    item_buy_logic.append(dataframe['close_max_72'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['close_max_144'] < (dataframe['close'] * 1.3))
+
+                    item_buy_logic.append(dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(96))
+                    item_buy_logic.append(dataframe['sma_200_1h'] > dataframe['sma_200_1h'].shift(24))
+                    item_buy_logic.append(dataframe['sma_200_4h'] > dataframe['sma_200_4h'].shift(96))
+
+                    item_buy_logic.append(dataframe['close'] > dataframe['ema_200'])
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < 0.9)
+                    item_buy_logic.append(dataframe['cti_20_4h'] < 0.9)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 80.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 80.0)
+
+                    item_buy_logic.append(dataframe['not_downtrend_15m'])
+                    item_buy_logic.append(dataframe['not_downtrend_1h'])
+                    item_buy_logic.append((dataframe['is_downtrend_3_1h'] == False)
+                                          | (dataframe['crsi_1h'] > 20.0))
+                    item_buy_logic.append(dataframe['is_downtrend_5_1h'] == False)
+                    item_buy_logic.append(dataframe['not_downtrend_4h'])
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    # current 4h red with top wick, previous 4h long green
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 2.0))
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.12))
+                    # current 4h red, previous 4h green with wick
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.04)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.18)
+                                          | (dataframe['top_wick_pct_4h'].shift(48) < 0.08)
+                                          | (dataframe['rsi_14_max_6_4h'] < 80.0))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.016))
+                    item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
+                    item_buy_logic.append(dataframe['rsi_14'] < 40.0)
+
+                # Condition #41 - Quick mode bull.
+                if index == 41:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'])
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.2))
+                    item_buy_logic.append(dataframe['high_max_6_1h'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['high_max_12_1h'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['high_max_24_1h'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < -0.8)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 75.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append((dataframe['r_480_1h'] > -90.0)
+                                          | (dataframe['not_downtrend_1h']))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.036))
+                    item_buy_logic.append(dataframe['close_delta'].gt(dataframe['close'] * 0.02))
+                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.4))
+                    item_buy_logic.append(dataframe['close'].lt(dataframe['bb40_2_low'].shift()))
+                    item_buy_logic.append(dataframe['close'].le(dataframe['close'].shift()))
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
+
+                # Condition #51 - Quick mode bear.
+                if index == 51:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_is_bull_4h'] == False)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.2))
+                    item_buy_logic.append(dataframe['high_max_6_1h'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['high_max_12_1h'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['high_max_24_1h'] < (dataframe['close'] * 1.36))
+
+                    item_buy_logic.append(dataframe['cti_20_1h'] < -0.8)
+                    item_buy_logic.append(dataframe['rsi_14_1h'] < 75.0)
+                    item_buy_logic.append(dataframe['rsi_14_4h'] < 75.0)
+
+                    item_buy_logic.append(dataframe['pct_change_high_max_6_24_1h'] > -0.3)
+                    item_buy_logic.append(dataframe['pct_change_high_max_3_12_4h'] > -0.4)
+                    item_buy_logic.append((dataframe['r_480_1h'] > -90.0)
+                                          | (dataframe['not_downtrend_1h']))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.036))
+                    item_buy_logic.append(dataframe['close_delta'].gt(dataframe['close'] * 0.02))
+                    item_buy_logic.append(dataframe['bb40_2_tail'].lt(dataframe['bb40_2_delta'] * 0.4))
+                    item_buy_logic.append(dataframe['close'].lt(dataframe['bb40_2_low'].shift()))
+                    item_buy_logic.append(dataframe['close'].le(dataframe['close'].shift()))
+                    item_buy_logic.append(dataframe['rsi_14'] < 36.0)
 
                 item_buy_logic.append(dataframe['volume'] > 0)
                 item_buy = reduce(lambda x, y: x & y, item_buy_logic)
