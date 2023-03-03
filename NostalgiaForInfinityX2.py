@@ -64,7 +64,7 @@ class NostalgiaForInfinityX2(IStrategy):
     INTERFACE_VERSION = 3
 
     def version(self) -> str:
-        return "v12.0.194"
+        return "v12.0.211"
 
     # ROI table:
     minimal_roi = {
@@ -123,11 +123,11 @@ class NostalgiaForInfinityX2(IStrategy):
     # Stop thesholds. 0: Doom Bull, 1: Doom Bear, 2: u_e Bull, 3: u_e Bear, 4: u_e mins Bull, 5: u_e mins Bear.
     # 6: u_e ema % Bull, 7: u_e ema % Bear, 8: u_e RSI diff Bull, 9: u_e RSI diff Bear.
     # 10: enable Doom Bull, 11: enable Doom Bear, 12: enable u_e Bull, 13: enable u_e Bear.
-    stop_thresholds_normal = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, False, False, True, True]
-    stop_thresholds_pump = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, False, False, True, True]
-    stop_thresholds_quick = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, False, False, True, True]
-    stop_thresholds_rebuy = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, False, False, True, True]
-    stop_thresholds_long = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, False, False, True, True]
+    stop_thresholds_normal = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, True, True, False, False]
+    stop_thresholds_pump = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, True, True, False, False]
+    stop_thresholds_quick = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, True, True, False, False]
+    stop_thresholds_rebuy = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, True, True, False, False]
+    stop_thresholds_long = [-0.2, -0.2, -0.025, -0.025, 720, 720, 0.016, 0.016, 24.0, 24.0, True, True, False, False]
 
     # Rebuy mode minimum number of free slots
     rebuy_mode_min_free_slots = 2
@@ -253,7 +253,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_normal_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_normal_stoploss(current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -584,12 +584,13 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_normal_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_normal_stoploss(self, current_rate: float, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         is_backtest = self.dp.runmode.value == 'backtest'
+        rel_profit = ((current_rate - trade.open_rate) / trade.open_rate)
         # Stoploss doom
         if (
                 (self.stop_thresholds_normal[10])
-                and (current_profit < self.stop_thresholds_normal[0])
+                and (rel_profit < self.stop_thresholds_normal[0])
         ):
             return True, 'exit_normal_stoploss_doom'
 
@@ -628,7 +629,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_pump_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_pump_stoploss(current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -959,12 +960,13 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_pump_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_pump_stoploss(self, current_rate: float, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         is_backtest = self.dp.runmode.value == 'backtest'
+        rel_profit = ((current_rate - trade.open_rate) / trade.open_rate)
         # Stoploss doom
         if (
                 (self.stop_thresholds_pump[10])
-                and (current_profit < self.stop_thresholds_pump[0])
+                and (rel_profit < self.stop_thresholds_pump[0])
         ):
             return True, 'exit_pump_stoploss_doom'
 
@@ -1003,7 +1005,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_quick_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_quick_stoploss(current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Extra sell logic
         if not sell:
@@ -1345,12 +1347,13 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_quick_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_quick_stoploss(self, current_rate: float, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
         is_backtest = self.dp.runmode.value == 'backtest'
+        rel_profit = ((current_rate - trade.open_rate) / trade.open_rate)
         # Stoploss doom
         if (
                 (self.stop_thresholds_quick[10])
-                and (current_profit < self.stop_thresholds_quick[0])
+                and (rel_profit < self.stop_thresholds_quick[0])
         ):
             return True, 'exit_quick_stoploss_doom'
 
@@ -1389,7 +1392,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_rebuy_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_rebuy_stoploss(current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -1720,11 +1723,12 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_rebuy_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_rebuy_stoploss(self, current_rate: float, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        rel_profit = ((current_rate - trade.open_rate) / trade.open_rate)
         # Stoploss doom
         if (
                 (self.stop_thresholds_rebuy[10])
-                and (current_profit < self.stop_thresholds_rebuy[0])
+                and (rel_profit < self.stop_thresholds_rebuy[0])
         ):
             return True, 'exit_rebuy_stoploss_doom'
 
@@ -1762,7 +1766,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_long_stoploss(current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_long_stoploss(current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -2093,11 +2097,12 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_long_stoploss(self, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+    def exit_long_stoploss(self, current_rate: float, current_profit: float, max_profit:float, max_loss:float, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade: 'Trade', current_time: 'datetime', buy_tag) -> tuple:
+        rel_profit = ((current_rate - trade.open_rate) / trade.open_rate)
         # Stoploss doom
         if (
                 (self.stop_thresholds_long[10])
-                and (current_profit < self.stop_thresholds_long[0])
+                and (rel_profit < self.stop_thresholds_long[0])
         ):
             return True, 'exit_long_stoploss_doom'
 
@@ -2144,14 +2149,13 @@ class NostalgiaForInfinityX2(IStrategy):
         max_profit = ((trade.max_rate - trade.open_rate) / trade.open_rate)
         max_loss = ((trade.open_rate - trade.min_rate) / trade.min_rate)
 
-        if hasattr(trade, 'select_filled_orders'):
-            filled_entries = trade.select_filled_orders('enter_long')
-            count_of_entries = len(filled_entries)
-            if count_of_entries > 1:
-                initial_entry = filled_entries[0]
-                if (initial_entry is not None and initial_entry.average is not None):
-                    max_profit = ((trade.max_rate - initial_entry.average) / initial_entry.average)
-                    max_loss = ((initial_entry.average - trade.min_rate) / trade.min_rate)
+        filled_entries = trade.select_filled_orders(trade.entry_side)
+        count_of_entries = len(filled_entries)
+        if count_of_entries > 1:
+            initial_entry = filled_entries[0]
+            if (initial_entry is not None and initial_entry.average is not None):
+                max_profit = ((trade.max_rate - initial_entry.average) / initial_entry.average)
+                max_loss = ((initial_entry.average - trade.min_rate) / trade.min_rate)
 
         # Normal mode
         if any(c in self.normal_mode_tags for c in enter_tags):
@@ -2287,56 +2291,74 @@ class NostalgiaForInfinityX2(IStrategy):
             # Low stakes, on Binance mostly
             if (grind_part_stake < min_stake):
                 grind_part_stake = grind_stake
-                self.grinding_parts = 1
-                self.grinding_thresholds = self.grinding_thresholds_alt
 
             # Buy
             for i in range(self.grinding_parts):
                 if (trade.stake_amount < (slice_amount + (grind_part_stake * i))):
                     if (
                             (total_profit < self.grinding_thresholds[i])
+                            and
+                            (
+                                (current_time - timedelta(minutes=2) > filled_entries[-1].order_filled_utc)
+                                or (slice_profit_entry < -0.005)
+                            )
                             and (
                                 (last_candle['rsi_14'] < 40.0)
-                                and (last_candle['r_14'] < -80.0)
-                                and (last_candle['rsi_3'] > 16.0)
-                                and (last_candle['btc_pct_close_max_72_5m'] < 1.03)
+                                and (last_candle['rsi_3'] > 10.0)
+                                and (last_candle['rsi_3_1h'] > 10.0)
+                                and (last_candle['btc_pct_close_max_72_5m'] < 1.04)
+                                and (last_candle['btc_pct_close_max_24_5m'] < 1.03)
                             )
                     ):
                         buy_amount = grind_part_stake if (grind_part_stake < max_stake) else max_stake
                         if (buy_amount < min_stake):
                             return None
-                        self.dp.send_msg(f"Grinding buying... | Amount: {buy_amount} | Total profit: {(total_profit * 100.0):.2f}%")
+                        self.dp.send_msg(f"Grinding entry [{trade.pair}] | Rate: {current_rate} | Stake amount: {buy_amount} | Total profit: {(total_profit * 100.0):.2f}%")
                         return buy_amount
 
             # Sell
 
             # Partial fills on grinding sells
-            for exit_order in reversed(filled_exits):
-                if (exit_order.remaining > min_stake):
+            if (count_of_exits > 0):
+                exit_order = filled_exits[-1]
+                if ((exit_order.remaining * exit_rate) > min_stake):
                     if (
                             (slice_profit_exit > 0.01)
                     ):
                         sell_amount = exit_order.remaining * exit_rate
-                        self.dp.send_msg(f"Grinding selling... | Amount: {sell_amount} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(slice_profit_exit * 100.0):.2f}%")
+                        self.dp.send_msg(f"Grinding exit (remaining) [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount} | Coin amount: {exit_order.remaining} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(slice_profit_exit * 100.0):.2f}%")
                         return -sell_amount
+                    else:
+                        # partial fill on sell and not yet selling the remaining
+                        return None
 
             # Sell the corresponding buy order
 
             if (count_of_entries > 1):
                 count_of_full_exits = 0
                 for exit_order in filled_exits:
-                    if (exit_order.remaining < min_stake):
+                    if ((exit_order.remaining * exit_rate) < min_stake):
                         count_of_full_exits += 1
 
                 if (count_of_entries > (count_of_full_exits + 1)):
-                    buy_order = filled_entries[count_of_full_exits + 1]
-                    grind_profit = (exit_rate - buy_order.average) / buy_order.average
-                    if (
-                            (grind_profit > 0.01)
-                    ):
-                        sell_amount = buy_order.filled * exit_rate
-                        self.dp.send_msg(f"Grinding selling... | Amount: {sell_amount} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(grind_profit * 100.0):.2f}%")
-                        return -sell_amount
+                    num_buys = 0
+                    num_sells = 0
+                    for order in reversed(filled_orders):
+                        if (order.ft_order_side == "buy"):
+                            num_buys += 1
+                        elif (order.ft_order_side == "sell"):
+                            if ((order.remaining * exit_rate) < min_stake):
+                                num_sells += 1
+                        if (num_buys > num_sells) and (order.ft_order_side == "buy"):
+                            buy_order = order
+                            grind_profit = (exit_rate - buy_order.average) / buy_order.average
+                            if (
+                                    (grind_profit > 0.01)
+                            ):
+                                sell_amount = buy_order.filled * exit_rate
+                                self.dp.send_msg(f"Grinding exit [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount}| Coin amount: {buy_order.filled} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(grind_profit * 100.0):.2f}%")
+                                return -sell_amount
+                            break
 
         return None
 
