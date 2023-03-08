@@ -64,7 +64,7 @@ class NostalgiaForInfinityX2(IStrategy):
     INTERFACE_VERSION = 3
 
     def version(self) -> str:
-        return "v12.0.239"
+        return "v12.0.244"
 
     # ROI table:
     minimal_roi = {
@@ -152,6 +152,9 @@ class NostalgiaForInfinityX2(IStrategy):
     # Profit max thresholds
     profit_max_thresholds = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05]
 
+    # Max allowed buy "slippage", how high to buy on the candle
+    max_slippage = 0.03
+
     #############################################################
     # Buy side configuration
 
@@ -211,6 +214,8 @@ class NostalgiaForInfinityX2(IStrategy):
             self.grinding_stakes = self.config['grinding_stakes']
         if ('grinding_thresholds' in self.config):
             self.grinding_thresholds = self.config['grinding_thresholds']
+        if ('max_slippage' in self.config):
+            self.max_slippage = self.config['max_slippage']
         if self.target_profit_cache is None:
             bot_name = ""
             if ('bot_name' in self.config):
@@ -2126,7 +2131,7 @@ class NostalgiaForInfinityX2(IStrategy):
         :param filled_entries: Filled entries list.
         :param filled_exits: Filled exits list.
         :param exit_rate: The exit rate.
-        :return tuple: The total profit in stake and ratio.
+        :return tuple: The total profit in stake, ratio, and ratio based on the first entry stake.
         """
         total_stake = 0.0
         total_profit = 0.0
@@ -2139,7 +2144,8 @@ class NostalgiaForInfinityX2(IStrategy):
             total_profit += exit_stake
         total_profit += (trade.amount * exit_rate * (1 - trade.fee_close))
         total_profit_ratio = (total_profit / total_stake)
-        return total_profit, total_profit_ratio
+        init_profit_ratio = (total_profit / filled_entries[0].cost)
+        return total_profit, total_profit_ratio, init_profit_ratio
 
     def custom_exit(self, pair: str, trade: 'Trade', current_time: 'datetime', current_rate: float,
                     current_profit: float, **kwargs):
@@ -2161,7 +2167,7 @@ class NostalgiaForInfinityX2(IStrategy):
 
         profit = 0.0
         if (trade.realized_profit != 0.0):
-            _, profit = self.calc_total_profit(trade, filled_entries, filled_exits, current_rate)
+            _, profit, _ = self.calc_total_profit(trade, filled_entries, filled_exits, current_rate)
         else:
             profit = current_profit
 
@@ -2284,14 +2290,6 @@ class NostalgiaForInfinityX2(IStrategy):
             if (count_of_entries == 0):
                 return None
 
-            total_profit = 0.0
-            if (trade.realized_profit != 0.0):
-                total_profit = ((current_rate - trade.open_rate) / trade.open_rate) * trade.stake_amount * (1 - trade.fee_close)
-                total_profit = total_profit + trade.realized_profit
-                total_profit = total_profit / trade.stake_amount
-            else:
-                total_profit = current_profit
-
             exit_rate = current_rate
             if self.dp.runmode.value in ('live', 'dry_run'):
                 ticker = self.dp.ticker(trade.pair)
@@ -2302,6 +2300,8 @@ class NostalgiaForInfinityX2(IStrategy):
                     else:
                         if (self.config['exit_pricing']['price_side'] in ["bid", "other"]):
                             exit_rate = ticker['bid']
+
+            profit_stake, profit_ratio, profit_init_ratio = self.calc_total_profit(trade, filled_entries, filled_exits, exit_rate)
 
             slice_amount = filled_entries[0].cost
             slice_profit = (exit_rate - filled_orders[-1].average) / filled_orders[-1].average
@@ -2321,7 +2321,7 @@ class NostalgiaForInfinityX2(IStrategy):
             for i in range(grinding_parts):
                 if (trade.stake_amount < stake_amount_threshold):
                     if (
-                            (total_profit < grinding_thresholds[i])
+                            (profit_init_ratio < grinding_thresholds[i])
                             and
                             (
                                 (current_time - timedelta(minutes=2) > filled_entries[-1].order_filled_utc)
@@ -2329,9 +2329,10 @@ class NostalgiaForInfinityX2(IStrategy):
                             )
                             and (
                                 (last_candle['rsi_14'] < 50.0)
-                                and (last_candle['close_max_12'] < (last_candle['close'] * 1.06))
-                                and (last_candle['close_max_24'] < (last_candle['close'] * 1.08))
-                                and (last_candle['close_max_48'] < (last_candle['close'] * 1.1))
+                                and (last_candle['rsi_3'] > 10.0)
+                                and (last_candle['close_max_12'] < (last_candle['close'] * 1.1))
+                                and (last_candle['close_max_24'] < (last_candle['close'] * 1.12))
+                                and (last_candle['close_max_48'] < (last_candle['close'] * 1.16))
                                 and (last_candle['close'] < last_candle['bb20_2_low'])
                                 and (last_candle['rsi_3_1h'] > 10.0)
                                 and (last_candle['btc_pct_close_max_72_5m'] < 1.04)
@@ -2343,7 +2344,7 @@ class NostalgiaForInfinityX2(IStrategy):
                             buy_amount = max_stake
                         if (buy_amount < min_stake):
                             return None
-                        self.dp.send_msg(f"Grinding entry [{trade.pair}] | Rate: {current_rate} | Stake amount: {buy_amount} | Total profit: {(total_profit * 100.0):.2f}%")
+                        self.dp.send_msg(f"Grinding entry [{trade.pair}] | Rate: {current_rate} | Stake amount: {buy_amount} | Profit (stake): {profit_stake} | Profit: {(profit_init_ratio * 100.0):.2f}%")
                         return buy_amount
                 stake_amount_threshold += slice_amount * grinding_stakes[i]
 
@@ -2359,7 +2360,7 @@ class NostalgiaForInfinityX2(IStrategy):
                         if (
                                 (slice_profit_exit > 0.01)
                         ):
-                            self.dp.send_msg(f"Grinding exit (remaining) [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount} | Coin amount: {exit_order.remaining} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(slice_profit_exit * 100.0):.2f}%")
+                            self.dp.send_msg(f"Grinding exit (remaining) [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount} | Coin amount: {exit_order.remaining} | Profit (stake): {profit_stake} | Profit: {(profit_init_ratio * 100.0):.2f}% | Grind profit: {(slice_profit_exit * 100.0):.2f}%")
                             return -sell_amount
                         else:
                             # partial fill on sell and not yet selling the remaining
@@ -2389,7 +2390,7 @@ class NostalgiaForInfinityX2(IStrategy):
                                     (grind_profit > 0.01)
                             ):
                                 sell_amount = buy_order.filled * exit_rate
-                                self.dp.send_msg(f"Grinding exit [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount}| Coin amount: {buy_order.filled} | Total profit: {(total_profit * 100.0):.2f}% | Grind profit: {(grind_profit * 100.0):.2f}%")
+                                self.dp.send_msg(f"Grinding exit [{trade.pair}] | Rate: {exit_rate} | Stake amount: {sell_amount}| Coin amount: {buy_order.filled} | Profit (stake): {profit_stake} | Profit: {(profit_init_ratio * 100.0):.2f}% | Grind profit: {(grind_profit * 100.0):.2f}%")
                                 return -sell_amount
                             break
 
@@ -10648,7 +10649,7 @@ class NostalgiaForInfinityX2(IStrategy):
         if ((rate > dataframe['close'])):
             slippage = ((rate / dataframe['close']) - 1.0)
 
-            if slippage < 0.03:
+            if slippage < self.max_slippage:
                 return True
             else:
                 log.warning(
