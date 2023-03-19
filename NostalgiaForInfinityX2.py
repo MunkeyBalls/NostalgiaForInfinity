@@ -64,7 +64,7 @@ class NostalgiaForInfinityX2(IStrategy):
     INTERFACE_VERSION = 3
 
     def version(self) -> str:
-        return "v12.0.276"
+        return "v12.0.306"
 
     # ROI table:
     minimal_roi = {
@@ -141,10 +141,12 @@ class NostalgiaForInfinityX2(IStrategy):
     grinding_enable = True
     # Grinding stakes
     grinding_stakes = [0.25, 0.25, 0.25, 0.25, 0.25]
-    grinding_stakes_alt = [0.5, 0.5]
+    grinding_stakes_alt_1 = [0.5, 0.5]
+    grinding_stakes_alt_2 = [0.75]
     # Current total profit
     grinding_thresholds = [-0.04, -0.08, -0.1, -0.12, -0.14]
-    grinding_thresholds_alt = [-0.06, -0.12]
+    grinding_thresholds_alt_1 = [-0.06, -0.12]
+    grinding_thresholds_alt_2 = [-0.06]
 
     stake_rebuy_mode_multiplier = 0.33
     pa_rebuy_mode_max = 2
@@ -238,26 +240,27 @@ class NostalgiaForInfinityX2(IStrategy):
     def get_ticker_indicator(self):
         return int(self.timeframe[:-1])
 
-    def exit_normal(self, pair: str, current_rate: float, current_profit: float,
+    def exit_normal(self, pair: str, current_rate: float,
+                    profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
                     max_profit: float, max_loss: float,
                     last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
                     trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
         sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_signals(self.normal_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+        sell, signal_name = self.exit_signals(self.normal_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
         if not sell:
-            sell, signal_name = self.exit_main(self.normal_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_main(self.normal_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
         if not sell:
-            sell, signal_name = self.exit_r(self.normal_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_r(self.normal_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_stoploss(self.normal_mode_name, current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_stoploss(self.normal_mode_name, current_rate, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -267,43 +270,56 @@ class NostalgiaForInfinityX2(IStrategy):
             previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
             previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
 
-            sell_max, signal_name_max = self.exit_profit_target(self.normal_mode_name, pair, trade, current_time, current_rate, current_profit,
-                                                                       last_candle, previous_candle_1,
-                                                                       previous_rate, previous_profit, previous_sell_reason,
-                                                                       previous_time_profit_reached, enter_tags)
+            sell_max, signal_name_max = self.exit_profit_target(self.normal_mode_name, pair, trade, current_time, current_rate,
+                                                                profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio,
+                                                                last_candle, previous_candle_1,
+                                                                previous_rate, previous_profit, previous_sell_reason,
+                                                                previous_time_profit_reached, enter_tags)
             if sell_max and signal_name_max is not None:
                 return True, f"{signal_name_max}_m"
-            if (current_profit > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.normal_mode_name}_stoploss_doom"]):
+            if (previous_sell_reason in [f"exit_{self.normal_mode_name}_stoploss_u_e"]):
+                if (profit_ratio > (previous_profit + 0.005)):
+                    mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
+                    if mark_pair:
+                        self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+            elif (profit_current_stake_ratio > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.normal_mode_name}_stoploss_doom"]):
                 # Update the target, raise it.
-                mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         # Add the pair to the list, if a sell triggered and conditions met
         if sell and signal_name is not None:
             previous_profit = None
             if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                 previous_profit = self.target_profit_cache.data[pair]['profit']
-            if (
-                    (previous_profit is None)
-                    or (previous_profit < current_profit)
-            ):
-                mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+            if (signal_name in [f"exit_{self.normal_mode_name}_stoploss_doom", f"exit_{self.normal_mode_name}_stoploss_u_e"]):
+                mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+            elif (
+                    (previous_profit is None)
+                    or (previous_profit < profit_current_stake_ratio)
+            ):
+                mark_pair, mark_signal = self.mark_profit_target(self.normal_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
                 else:
                     # Just sell it, without maximize
                     return True, f"{signal_name}"
         else:
             if (
-                    (current_profit >= self.profit_max_thresholds[0])
+                    (profit_current_stake_ratio >= self.profit_max_thresholds[0])
             ):
                 previous_profit = None
                 if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                     previous_profit = self.target_profit_cache.data[pair]['profit']
-                if (previous_profit is None) or (previous_profit < current_profit):
+                if (previous_profit is None) or (previous_profit < profit_current_stake_ratio):
                     mark_signal = f"exit_profit_{self.normal_mode_name}_max"
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         if (signal_name not in [f"exit_profit_{self.normal_mode_name}_max", f"exit_{self.normal_mode_name}_stoploss_doom", f"exit_{self.normal_mode_name}_stoploss_u_e"]):
             if sell and (signal_name is not None):
@@ -311,26 +327,27 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_pump(self, pair: str, current_rate: float, current_profit: float,
+    def exit_pump(self, pair: str, current_rate: float,
+                    profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
                     max_profit: float, max_loss: float,
                     last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
                     trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
         sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_signals(self.pump_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+        sell, signal_name = self.exit_signals(self.pump_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
         if not sell:
-            sell, signal_name = self.exit_main(self.pump_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_main(self.pump_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
         if not sell:
-            sell, signal_name = self.exit_r(self.pump_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_r(self.pump_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_stoploss(self.pump_mode_name, current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_stoploss(self.pump_mode_name, current_rate, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -340,43 +357,56 @@ class NostalgiaForInfinityX2(IStrategy):
             previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
             previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
 
-            sell_max, signal_name_max = self.exit_profit_target(self.pump_mode_name, pair, trade, current_time, current_rate, current_profit,
-                                                                       last_candle, previous_candle_1,
-                                                                       previous_rate, previous_profit, previous_sell_reason,
-                                                                       previous_time_profit_reached, enter_tags)
+            sell_max, signal_name_max = self.exit_profit_target(self.pump_mode_name, pair, trade, current_time, current_rate,
+                                                                profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio,
+                                                                last_candle, previous_candle_1,
+                                                                previous_rate, previous_profit, previous_sell_reason,
+                                                                previous_time_profit_reached, enter_tags)
             if sell_max and signal_name_max is not None:
                 return True, f"{signal_name_max}_m"
-            if (current_profit > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.pump_mode_name}_stoploss_doom"]):
+            if (previous_sell_reason in [f"exit_{self.pump_mode_name}_stoploss_u_e"]):
+                if (profit_ratio > (previous_profit + 0.005)):
+                    mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
+                    if mark_pair:
+                        self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+            elif (profit_current_stake_ratio > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.pump_mode_name}_stoploss_doom"]):
                 # Update the target, raise it.
-                mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         # Add the pair to the list, if a sell triggered and conditions met
         if sell and signal_name is not None:
             previous_profit = None
             if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                 previous_profit = self.target_profit_cache.data[pair]['profit']
-            if (
-                    (previous_profit is None)
-                    or (previous_profit < current_profit)
-            ):
-                mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+            if (signal_name in [f"exit_{self.pump_mode_name}_stoploss_doom", f"exit_{self.pump_mode_name}_stoploss_u_e"]):
+                mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+            elif (
+                    (previous_profit is None)
+                    or (previous_profit < profit_current_stake_ratio)
+            ):
+                mark_pair, mark_signal = self.mark_profit_target(self.pump_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
                 else:
                     # Just sell it, without maximize
                     return True, f"{signal_name}"
         else:
             if (
-                    (current_profit >= self.profit_max_thresholds[2])
+                    (profit_current_stake_ratio >= self.profit_max_thresholds[2])
             ):
                 previous_profit = None
                 if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                     previous_profit = self.target_profit_cache.data[pair]['profit']
-                if (previous_profit is None) or (previous_profit < current_profit):
+                if (previous_profit is None) or (previous_profit < profit_current_stake_ratio):
                     mark_signal = f"exit_profit_{self.pump_mode_name}_max"
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         if (signal_name not in [f"exit_profit_{self.pump_mode_name}_max", f"exit_{self.pump_mode_name}_stoploss_doom", f"exit_{self.pump_mode_name}_stoploss_u_e"]):
             if sell and (signal_name is not None):
@@ -384,36 +414,37 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_quick(self, pair: str, current_rate: float, current_profit: float,
+    def exit_quick(self, pair: str, current_rate: float,
+                    profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
                     max_profit: float, max_loss: float,
                     last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
                     trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
         sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_signals(self.quick_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+        sell, signal_name = self.exit_signals(self.quick_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
         if not sell:
-            sell, signal_name = self.exit_main(self.quick_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_main(self.quick_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
         if not sell:
-            sell, signal_name = self.exit_r(self.quick_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_r(self.quick_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_stoploss(self.quick_mode_name, current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_stoploss(self.quick_mode_name, current_rate, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Extra sell logic
         if not sell:
-            if (0.09 >= current_profit > 0.02) and (last_candle['rsi_14'] > 78.0):
+            if (0.09 >= profit_current_stake_ratio > 0.02) and (last_candle['rsi_14'] > 78.0):
                 sell, signal_name =  True, f'exit_{self.quick_mode_name}_q_1'
 
-            if (0.09 >= current_profit > 0.02) and (last_candle['cti_20'] > 0.95):
+            if (0.09 >= profit_current_stake_ratio > 0.02) and (last_candle['cti_20'] > 0.95):
                 sell, signal_name = True, f'exit_{self.quick_mode_name}_q_2'
 
-            if (0.09 >= current_profit > 0.02) and (last_candle['r_14'] >= -0.1):
+            if (0.09 >= profit_current_stake_ratio > 0.02) and (last_candle['r_14'] >= -0.1):
                 sell, signal_name = True, f'exit_{self.quick_mode_name}_q_3'
 
         # Profit Target Signal
@@ -424,43 +455,56 @@ class NostalgiaForInfinityX2(IStrategy):
             previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
             previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
 
-            sell_max, signal_name_max = self.exit_profit_target(self.quick_mode_name, pair, trade, current_time, current_rate, current_profit,
-                                                                       last_candle, previous_candle_1,
-                                                                       previous_rate, previous_profit, previous_sell_reason,
-                                                                       previous_time_profit_reached, enter_tags)
+            sell_max, signal_name_max = self.exit_profit_target(self.quick_mode_name, pair, trade, current_time, current_rate,
+                                                                profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio,
+                                                                last_candle, previous_candle_1,
+                                                                previous_rate, previous_profit, previous_sell_reason,
+                                                                previous_time_profit_reached, enter_tags)
             if sell_max and signal_name_max is not None:
                 return True, f"{signal_name_max}_m"
-            if (current_profit > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.quick_mode_name}_stoploss_doom"]):
+            if (previous_sell_reason in [f"exit_{self.quick_mode_name}_stoploss_u_e"]):
+                if (profit_ratio > (previous_profit + 0.005)):
+                    mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
+                    if mark_pair:
+                        self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+            elif (profit_current_stake_ratio > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.quick_mode_name}_stoploss_doom"]):
                 # Update the target, raise it.
-                mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         # Add the pair to the list, if a sell triggered and conditions met
         if sell and signal_name is not None:
             previous_profit = None
             if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                 previous_profit = self.target_profit_cache.data[pair]['profit']
-            if (
-                    (previous_profit is None)
-                    or (previous_profit < current_profit)
-            ):
-                mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+            if (signal_name in [f"exit_{self.quick_mode_name}_stoploss_doom", f"exit_{self.quick_mode_name}_stoploss_u_e"]):
+                mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+            elif (
+                    (previous_profit is None)
+                    or (previous_profit < profit_current_stake_ratio)
+            ):
+                mark_pair, mark_signal = self.mark_profit_target(self.quick_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
                 else:
                     # Just sell it, without maximize
                     return True, f"{signal_name}"
         else:
             if (
-                    (current_profit >= self.profit_max_thresholds[4])
+                    (profit_current_stake_ratio >= self.profit_max_thresholds[4])
             ):
                 previous_profit = None
                 if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                     previous_profit = self.target_profit_cache.data[pair]['profit']
-                if (previous_profit is None) or (previous_profit < current_profit):
+                if (previous_profit is None) or (previous_profit < profit_current_stake_ratio):
                     mark_signal = f"exit_profit_{self.quick_mode_name}_max"
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         if (signal_name not in [f"exit_profit_{self.quick_mode_name}_max", f"exit_{self.quick_mode_name}_stoploss_doom", f"exit_{self.quick_mode_name}_stoploss_u_e"]):
             if sell and (signal_name is not None):
@@ -468,26 +512,27 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_rebuy(self, pair: str, current_rate: float, current_profit: float,
+    def exit_rebuy(self, pair: str, current_rate: float,
+                    profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
                     max_profit: float, max_loss: float,
                     last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
                     trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
         sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_signals(self.rebuy_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+        sell, signal_name = self.exit_signals(self.rebuy_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
         if not sell:
-            sell, signal_name = self.exit_main(self.rebuy_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_main(self.rebuy_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
         if not sell:
-            sell, signal_name = self.exit_r(self.rebuy_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_r(self.rebuy_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_stoploss(self.rebuy_mode_name, current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_stoploss(self.rebuy_mode_name, current_rate, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -497,43 +542,56 @@ class NostalgiaForInfinityX2(IStrategy):
             previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
             previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
 
-            sell_max, signal_name_max = self.exit_profit_target(self.rebuy_mode_name, pair, trade, current_time, current_rate, current_profit,
-                                                                       last_candle, previous_candle_1,
-                                                                       previous_rate, previous_profit, previous_sell_reason,
-                                                                       previous_time_profit_reached, enter_tags)
+            sell_max, signal_name_max = self.exit_profit_target(self.rebuy_mode_name, pair, trade, current_time, current_rate,
+                                                                profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio,
+                                                                last_candle, previous_candle_1,
+                                                                previous_rate, previous_profit, previous_sell_reason,
+                                                                previous_time_profit_reached, enter_tags)
             if sell_max and signal_name_max is not None:
                 return True, f"{signal_name_max}_m"
-            if (current_profit > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.rebuy_mode_name}_stoploss_doom"]):
+            if (previous_sell_reason in [f"exit_{self.rebuy_mode_name}_stoploss_u_e"]):
+                if (profit_ratio > (previous_profit + 0.005)):
+                    mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
+                    if mark_pair:
+                        self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+            elif (profit_current_stake_ratio > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.rebuy_mode_name}_stoploss_doom"]):
                 # Update the target, raise it.
-                mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         # Add the pair to the list, if a sell triggered and conditions met
         if sell and signal_name is not None:
             previous_profit = None
             if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                 previous_profit = self.target_profit_cache.data[pair]['profit']
-            if (
-                    (previous_profit is None)
-                    or (previous_profit < current_profit)
-            ):
-                mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+            if (signal_name in [f"exit_{self.rebuy_mode_name}_stoploss_doom", f"exit_{self.rebuy_mode_name}_stoploss_u_e"]):
+                mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+            elif (
+                    (previous_profit is None)
+                    or (previous_profit < profit_current_stake_ratio)
+            ):
+                mark_pair, mark_signal = self.mark_profit_target(self.rebuy_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
                 else:
                     # Just sell it, without maximize
                     return True, f"{signal_name}"
         else:
             if (
-                    (current_profit >= self.profit_max_thresholds[6])
+                    (profit_current_stake_ratio >= self.profit_max_thresholds[6])
             ):
                 previous_profit = None
                 if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                     previous_profit = self.target_profit_cache.data[pair]['profit']
-                if (previous_profit is None) or (previous_profit < current_profit):
+                if (previous_profit is None) or (previous_profit < profit_current_stake_ratio):
                     mark_signal = f"exit_profit_{self.rebuy_mode_name}_max"
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         if (signal_name not in [f"exit_profit_{self.rebuy_mode_name}_max", f"exit_{self.rebuy_mode_name}_stoploss_doom", f"exit_{self.rebuy_mode_name}_stoploss_u_e"]):
             if sell and (signal_name is not None):
@@ -541,26 +599,27 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return False, None
 
-    def exit_long(self, pair: str, current_rate: float, current_profit: float,
+    def exit_long(self, pair: str, current_rate: float,
+                    profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
                     max_profit: float, max_loss: float,
                     last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5,
                     trade: 'Trade', current_time: 'datetime', enter_tags) -> tuple:
         sell = False
 
         # Original sell signals
-        sell, signal_name = self.exit_signals(self.long_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+        sell, signal_name = self.exit_signals(self.long_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Main sell signals
         if not sell:
-            sell, signal_name = self.exit_main(self.long_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_main(self.long_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Williams %R based sells
         if not sell:
-            sell, signal_name = self.exit_r(self.long_mode_name, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_r(self.long_mode_name, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Stoplosses
         if not sell:
-            sell, signal_name = self.exit_stoploss(self.long_mode_name, current_rate, current_profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_stoploss(self.long_mode_name, current_rate, profit_current_stake_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
 
         # Profit Target Signal
         # Check if pair exist on target_profit_cache
@@ -570,43 +629,56 @@ class NostalgiaForInfinityX2(IStrategy):
             previous_sell_reason = self.target_profit_cache.data[pair]['sell_reason']
             previous_time_profit_reached = datetime.fromisoformat(self.target_profit_cache.data[pair]['time_profit_reached'])
 
-            sell_max, signal_name_max = self.exit_profit_target(self.long_mode_name, pair, trade, current_time, current_rate, current_profit,
-                                                                       last_candle, previous_candle_1,
-                                                                       previous_rate, previous_profit, previous_sell_reason,
-                                                                       previous_time_profit_reached, enter_tags)
+            sell_max, signal_name_max = self.exit_profit_target(self.long_mode_name, pair, trade, current_time, current_rate,
+                                                                profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio,
+                                                                last_candle, previous_candle_1,
+                                                                previous_rate, previous_profit, previous_sell_reason,
+                                                                previous_time_profit_reached, enter_tags)
             if sell_max and signal_name_max is not None:
                 return True, f"{signal_name_max}_m"
-            if (current_profit > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.long_mode_name}_stoploss_doom"]):
+            if (previous_sell_reason in [f"exit_{self.long_mode_name}_stoploss_u_e"]):
+                if (profit_ratio > (previous_profit + 0.005)):
+                    mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
+                    if mark_pair:
+                        self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+            elif (profit_current_stake_ratio > (previous_profit + 0.005)) and (previous_sell_reason not in [f"exit_{self.long_mode_name}_stoploss_doom"]):
                 # Update the target, raise it.
-                mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+                mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, True, previous_sell_reason, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         # Add the pair to the list, if a sell triggered and conditions met
         if sell and signal_name is not None:
             previous_profit = None
             if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                 previous_profit = self.target_profit_cache.data[pair]['profit']
-            if (
-                    (previous_profit is None)
-                    or (previous_profit < current_profit)
-            ):
-                mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, sell, signal_name, trade, current_time, current_rate, current_profit, last_candle, previous_candle_1)
+            if (signal_name in [f"exit_{self.long_mode_name}_stoploss_doom", f"exit_{self.long_mode_name}_stoploss_u_e"]):
+                mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_ratio, last_candle, previous_candle_1)
                 if mark_pair:
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_ratio, current_time)
+                else:
+                    # Just sell it, without maximize
+                    return True, f"{signal_name}"
+            elif (
+                    (previous_profit is None)
+                    or (previous_profit < profit_current_stake_ratio)
+            ):
+                mark_pair, mark_signal = self.mark_profit_target(self.long_mode_name, pair, sell, signal_name, trade, current_time, current_rate, profit_current_stake_ratio, last_candle, previous_candle_1)
+                if mark_pair:
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
                 else:
                     # Just sell it, without maximize
                     return True, f"{signal_name}"
         else:
             if (
-                    (current_profit >= self.profit_max_thresholds[8])
+                    (profit_current_stake_ratio >= self.profit_max_thresholds[8])
             ):
                 previous_profit = None
                 if self.target_profit_cache is not None and pair in self.target_profit_cache.data:
                     previous_profit = self.target_profit_cache.data[pair]['profit']
-                if (previous_profit is None) or (previous_profit < current_profit):
+                if (previous_profit is None) or (previous_profit < profit_current_stake_ratio):
                     mark_signal = f"exit_profit_{self.long_mode_name}_max"
-                    self._set_profit_target(pair, mark_signal, current_rate, current_profit, current_time)
+                    self._set_profit_target(pair, mark_signal, current_rate, profit_current_stake_ratio, current_time)
 
         if (signal_name not in [f"exit_profit_{self.long_mode_name}_max", f"exit_{self.long_mode_name}_stoploss_doom", f"exit_{self.long_mode_name}_stoploss_u_e"]):
             if sell and (signal_name is not None):
@@ -620,56 +692,58 @@ class NostalgiaForInfinityX2(IStrategy):
 
         return None, None
 
-    def exit_profit_target(self, mode_name: str, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, last_candle, previous_candle_1, previous_rate, previous_profit,  previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
+    def exit_profit_target(self, mode_name: str, pair: str, trade: Trade, current_time: datetime, current_rate: float,
+                           profit_stake: float, profit_ratio: float, profit_current_stake_ratio: float, profit_init_ratio: float,
+                           last_candle, previous_candle_1, previous_rate, previous_profit, previous_sell_reason, previous_time_profit_reached, enter_tags) -> tuple:
         if (previous_sell_reason in [f"exit_{mode_name}_stoploss_doom"]):
-            if (current_profit > 0.04):
+            if (profit_ratio > 0.04):
                 # profit is over the threshold, don't exit
                 self._remove_profit_target(pair)
                 return False, None
-            if (current_profit < -0.18):
-                if (current_profit < (previous_profit - 0.04)):
+            if (profit_ratio < -0.18):
+                if (profit_ratio < (previous_profit - 0.04)):
                     return True, previous_sell_reason
-            elif (current_profit < -0.1):
-                if (current_profit < (previous_profit - 0.04)):
+            elif (profit_ratio < -0.1):
+                if (profit_ratio < (previous_profit - 0.04)):
                     return True, previous_sell_reason
-            elif (current_profit < -0.04):
-                if (current_profit < (previous_profit - 0.04)):
+            elif (profit_ratio < -0.04):
+                if (profit_ratio < (previous_profit - 0.04)):
                     return True, previous_sell_reason
             else:
-                if (current_profit < (previous_profit - 0.04)):
+                if (profit_ratio < (previous_profit - 0.04)):
                     return True, previous_sell_reason
         elif (previous_sell_reason in [f"exit_{mode_name}_stoploss_u_e"]):
-            if (current_profit > 0.04):
+            if (profit_current_stake_ratio > 0.04):
                 # profit is over the threshold, don't exit
                 self._remove_profit_target(pair)
                 return False, None
-            if (current_profit < (previous_profit - 0.14)):
+            if (profit_ratio < (previous_profit - (0.14 if trade.realized_profit == 0.0 else 0.26))):
                     return True, previous_sell_reason
         elif (previous_sell_reason in [f"exit_profit_{mode_name}_max"]):
-            if (current_profit < -0.08):
+            if (profit_current_stake_ratio < -0.08):
                 # profit is under the threshold, cancel it
                 self._remove_profit_target(pair)
                 return False, None
-            if (0.001 <= current_profit < 0.01):
-                if (current_profit < (previous_profit - 0.01)):
+            if (0.001 <= profit_current_stake_ratio < 0.01):
+                if (profit_current_stake_ratio < (previous_profit - 0.01)):
                     return True, previous_sell_reason
-            elif (0.01 <= current_profit < 0.02):
-                if (current_profit < (previous_profit - 0.02)):
+            elif (0.01 <= profit_current_stake_ratio < 0.02):
+                if (profit_current_stake_ratio < (previous_profit - 0.02)):
                     return True, previous_sell_reason
-            elif (0.02 <= current_profit < 0.03):
-                if (current_profit < (previous_profit - 0.03)):
+            elif (0.02 <= profit_current_stake_ratio < 0.03):
+                if (profit_current_stake_ratio < (previous_profit - 0.03)):
                     return True, previous_sell_reason
-            elif (0.03 <= current_profit < 0.05):
-                if (current_profit < (previous_profit - 0.04)):
+            elif (0.03 <= profit_current_stake_ratio < 0.05):
+                if (profit_current_stake_ratio < (previous_profit - 0.04)):
                     return True, previous_sell_reason
-            elif (0.05 <= current_profit < 0.08):
-                if (current_profit < (previous_profit - 0.05)):
+            elif (0.05 <= profit_current_stake_ratio < 0.08):
+                if (profit_current_stake_ratio < (previous_profit - 0.05)):
                     return True, previous_sell_reason
-            elif (0.08 <= current_profit < 0.12):
-                if (current_profit < (previous_profit - 0.06)):
+            elif (0.08 <= profit_current_stake_ratio < 0.12):
+                if (profit_current_stake_ratio < (previous_profit - 0.06)):
                     return True, previous_sell_reason
-            elif (0.12 <= current_profit):
-                if (current_profit < (previous_profit - 0.07)):
+            elif (0.12 <= profit_current_stake_ratio):
+                if (profit_current_stake_ratio < (previous_profit - 0.07)):
                     return True, previous_sell_reason
         else:
             return False, None
@@ -1049,8 +1123,6 @@ class NostalgiaForInfinityX2(IStrategy):
             profit_current_stake_ratio = current_profit
             profit_init_ratio = current_profit
 
-        profit = profit_ratio
-
         max_profit = ((trade.max_rate - trade.open_rate) / trade.open_rate)
         max_loss = ((trade.open_rate - trade.min_rate) / trade.min_rate)
 
@@ -1063,38 +1135,38 @@ class NostalgiaForInfinityX2(IStrategy):
 
         # Normal mode
         if any(c in self.normal_mode_tags for c in enter_tags):
-            sell, signal_name = self.exit_normal(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_normal(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Pump mode
         if any(c in self.pump_mode_tags for c in enter_tags):
-            sell, signal_name = self.exit_pump(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_pump(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Quick mode
         if any(c in self.quick_mode_tags for c in enter_tags):
-            sell, signal_name = self.exit_quick(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_quick(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Rebuy mode
         if all(c in self.rebuy_mode_tags for c in enter_tags):
-            sell, signal_name = self.exit_rebuy(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_rebuy(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Long mode
         if any(c in self.long_mode_tags for c in enter_tags):
-            sell, signal_name = self.exit_long(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_long(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
         # Trades not opened by X2
         if not any(c in (self.normal_mode_tags + self.pump_mode_tags + self.quick_mode_tags + self.rebuy_mode_tags + self.long_mode_tags) for c in enter_tags):
             # use normal mode for such trades
-            sell, signal_name = self.exit_normal(pair, current_rate, profit, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
+            sell, signal_name = self.exit_normal(pair, current_rate, profit_stake, profit_ratio, profit_current_stake_ratio, profit_init_ratio, max_profit, max_loss, last_candle, previous_candle_1, previous_candle_2, previous_candle_3, previous_candle_4, previous_candle_5, trade, current_time, enter_tags)
             if sell and (signal_name is not None):
                 return f"{signal_name} ( {enter_tag})"
 
@@ -1195,9 +1267,14 @@ class NostalgiaForInfinityX2(IStrategy):
             grinding_stakes = self.grinding_stakes
             # Low stakes, on Binance mostly
             if ((slice_amount * self.grinding_stakes[0]) < min_stake):
-                grinding_parts = len(self.grinding_stakes_alt)
-                grinding_thresholds = self.grinding_thresholds_alt
-                grinding_stakes = self.grinding_stakes_alt
+                if ((slice_amount * self.grinding_stakes_alt_1[0]) < min_stake):
+                    grinding_parts = len(self.grinding_stakes_alt_2)
+                    grinding_thresholds = self.grinding_thresholds_alt_2
+                    grinding_stakes = self.grinding_stakes_alt_2
+                else:
+                    grinding_parts = len(self.grinding_stakes_alt_1)
+                    grinding_thresholds = self.grinding_thresholds_alt_1
+                    grinding_stakes = self.grinding_stakes_alt_1
             for i in range(grinding_parts):
                 if (trade.stake_amount < stake_amount_threshold):
                     if (
@@ -1207,17 +1284,31 @@ class NostalgiaForInfinityX2(IStrategy):
                                 (current_time - timedelta(minutes=30) > filled_entries[-1].order_filled_utc)
                                 or (slice_profit_entry < -0.01)
                             )
-                            and (
-                                (last_candle['rsi_14'] < 50.0)
-                                and (last_candle['close_max_12'] < (last_candle['close'] * 1.1))
+                            and
+                            (
+                                (last_candle['close_max_12'] < (last_candle['close'] * 1.1))
                                 and (last_candle['close_max_24'] < (last_candle['close'] * 1.12))
                                 and (last_candle['close_max_48'] < (last_candle['close'] * 1.16))
-                                and (last_candle['ema_26'] > last_candle['ema_12'])
-                                and ((last_candle['ema_26'] - last_candle['ema_12']) > (last_candle['open'] * 0.005))
-                                and ((previous_candle['ema_26'] - previous_candle['ema_12']) > (last_candle['open'] / 100))
-                                and (last_candle['rsi_3_1h'] > 10.0)
                                 and (last_candle['btc_pct_close_max_72_5m'] < 0.04)
                                 and (last_candle['btc_pct_close_max_24_5m'] < 0.03)
+                            )
+                            and
+                            (
+                                (
+                                    (last_candle['rsi_14'] < 46.0)
+                                    and (last_candle['rsi_3'] > 10.0)
+                                    and (last_candle['ha_close'] > last_candle['ha_open'])
+                                    and (last_candle['rsi_3_1h'] > 10.0)
+                                )
+                                or
+                                (
+                                    (last_candle['rsi_14'] < 36.0)
+                                    and (last_candle['rsi_3'] > 5.0)
+                                    and (last_candle['close'] < (last_candle['bb20_2_low'] * 0.996))
+                                    and (last_candle['rsi_3_1h'] > 25.0)
+                                    and (last_candle['not_downtrend_1h'])
+                                    and (last_candle['not_downtrend_4h'])
+                                )
                             )
                     ):
                         buy_amount = slice_amount * grinding_stakes[i]
@@ -5424,6 +5515,9 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_4h'] < 0.5)
                                           | (dataframe['cti_20_1d'] < 0.5)
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -5721,6 +5815,21 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_4h'] < -0.5)
                                           | (dataframe['cti_20_1d'] < 0.5)
                                           | (dataframe['rsi_14_1d'] < 70.0))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1d'] < -0.75)
+                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.06))
@@ -6032,6 +6141,14 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['rsi_14_15m'] < 30.0)
                                           | (dataframe['cti_20_1h'] < -0.0)
                                           | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
 
                     # Logic
@@ -6589,6 +6706,25 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_4h'] < 0.75)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -7275,6 +7411,34 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_1d'] < -0.0)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.07)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1d'] < -0.75)
+                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -7636,6 +7800,14 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | (dataframe['close'] < (dataframe['ema_26'] * 0.91)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | (dataframe['close'] < (dataframe['ema_26'] * 0.92)))
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_26'] * 0.94))
@@ -7646,524 +7818,683 @@ class NostalgiaForInfinityX2(IStrategy):
                     # Protections
                     item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
                     item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_12'] < (dataframe['close'] * 1.16))
+                    item_buy_logic.append(dataframe['close_max_24'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
 
-                    item_buy_logic.append(dataframe['ema_12_15m'] > dataframe['ema_26_15m'])
+                    item_buy_logic.append(dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
                     item_buy_logic.append(dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152))
 
-                    item_buy_logic.append(protections_global_1)
-                    item_buy_logic.append(protections_global_2)
-                    item_buy_logic.append(protections_global_3)
-                    item_buy_logic.append(protections_global_4)
-                    item_buy_logic.append(protections_global_5)
-                    item_buy_logic.append(protections_global_6)
-                    item_buy_logic.append(protections_global_7)
-                    item_buy_logic.append(protections_global_8)
-                    item_buy_logic.append(protections_global_9)
-                    item_buy_logic.append(protections_global_10)
-
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.06)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.06)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | (dataframe['rsi_14_1d'] < 70.0))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < 0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.75)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.8)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
                     item_buy_logic.append((dataframe['not_downtrend_15m'])
                                           | (dataframe['not_downtrend_1h'])
                                           | (dataframe['not_downtrend_4h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.85)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.07)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.85)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.06)))
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
                                           | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < -0.75)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                                          | (dataframe['cti_20_1d'] < -0.8)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
                     item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.85)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.9)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.75)
-                                          | (dataframe['cti_20_4h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.85)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_1h'] > 25.0)
                                           | (dataframe['cti_20_4h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < -0.75)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['cti_20_4h'] < 0.75)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
-                                          | (dataframe['cti_20_15m'] < -0.75)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_1d'] < 0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.75)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['rsi_14_4h'] < 70.0)
-                                          | (dataframe['cti_20_1d'] < 0.75)
-                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
                     item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.0)
-                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
                                           | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['rsi_3_15m'] > 30.0)
-                                          | (dataframe['rsi_14_15m'] < 30.0)
-                                          | (dataframe['cti_20_1h'] < -0.5)
-                                          | (dataframe['cti_20_4h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.5)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02)))
-                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
                                           | (dataframe['rsi_3_15m'] > 20.0)
                                           | (dataframe['rsi_14_15m'] < 30.0)
-                                          | (dataframe['cti_20_1h'] < 0.5)
-                                          | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02)))
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
                     item_buy_logic.append((dataframe['not_downtrend_1h'])
                                           | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.06)))
+                    item_buy_logic.append((dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
                                           | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_3_1h'] > 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
                                           | (dataframe['rsi_14_15m'] < 30.0)
                                           | (dataframe['cti_20_1h'] < -0.8)
                                           | (dataframe['cti_20_4h'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02)))
-                    item_buy_logic.append((dataframe['not_downtrend_15m'])
-                                          | (dataframe['cti_20_15m'] < -0.5)
-                                          | (dataframe['rsi_3_15m'] > 20.0)
-                                          | (dataframe['rsi_14_15m'] < 30.0)
-                                          | (dataframe['cti_20_1h'] < -0.0)
-                                          | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02)))
-                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
                                           | (dataframe['rsi_14_15m'] < 30.0)
                                           | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_3_1h'] > 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.75)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.06)))
+                    item_buy_logic.append((dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < 0.75)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['rsi_14_1d'] < 70.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['rsi_3_1h'] > 30.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    # CHZ
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['rsi_14_1h'] < 20.0)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_1h'] > 10.0)
                                           | (dataframe['cti_20_4h'] < -0.0)
                                           | (dataframe['cti_20_1d'] < -0.0)
-                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.02)))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.75)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['rsi_3_1h'] > 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.75)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.9)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < 0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < 0.8)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.75)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['r_14_4h'] > -50.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.9)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.75)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['change_pct_4h'] < 0.08)
+                                          | (dataframe['top_wick_pct_4h'] < 0.08)
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.75)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < 0.75)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.05)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.5)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['rsi_14_1h'] > 60.0)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < 0.5)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['rsi_3_1h'] > 20.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.04)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 10.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < -0.8)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['rsi_14_15m'] > 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.9)
+                                          | (dataframe['cti_20_4h'] < 0.8)
+                                          | (dataframe['cti_20_1d'] < -0.75)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
-                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.01))
+                    item_buy_logic.append((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.016))
                     item_buy_logic.append((dataframe['ema_26'].shift() - dataframe['ema_12'].shift()) > (dataframe['open'] / 100))
                     item_buy_logic.append(dataframe['rsi_14'] < 36.0)
 
@@ -8594,6 +8925,14 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_1d'] < -0.0)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | (dataframe['close'] < (dataframe['ema_16'] * 0.9)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.8)
+                                          | (dataframe['rsi_3_15m'] > 30.0)
+                                          | (dataframe['rsi_14_15m'] < 20.0)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | (dataframe['close'] < (dataframe['ema_16'] * 0.96)))
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_16'] * 0.968))
@@ -8689,6 +9028,15 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['rsi_3_1h'] > 10.0)
                                           | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
                                           | (dataframe['ema_200_4h'] > dataframe['ema_200_4h'].shift(1152)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.8))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.036))
@@ -8745,6 +9093,17 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_1d'] < -0.5)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append((dataframe['not_downtrend_15m'])
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['rsi_3_1h'] > 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.0)
+                                          | ((dataframe['ema_26'] - dataframe['ema_12']) > (dataframe['open'] * 0.03)))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['ema_26'] > dataframe['ema_12'])
@@ -8794,6 +9153,15 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['cti_20_1d'] < -0.5)
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | (dataframe['close'] < (dataframe['ema_26'] * 0.88)))
+                    item_buy_logic.append((dataframe['cti_20_15m'] < -0.75)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_1h'] < -0.8)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < -0.8))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_26'] * 0.938))
@@ -8861,6 +9229,16 @@ class NostalgiaForInfinityX2(IStrategy):
                                           | (dataframe['ema_200_1h'] > dataframe['ema_200_1h'].shift(576))
                                           | (dataframe['ema_200_1d'] > dataframe['ema_200_1d'].shift(1152))
                                           | (dataframe['close_max_48'] < (dataframe['close'] * 1.12)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_15m'] < -0.9)
+                                          | (dataframe['rsi_3_15m'] > 25.0)
+                                          | (dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['rsi_3_1h'] > 25.0)
+                                          | (dataframe['cti_20_4h'] < -0.0)
+                                          | (dataframe['cti_20_1d'] < -0.0))
+                    item_buy_logic.append(((dataframe['not_downtrend_1h'])
+                                           & (dataframe['not_downtrend_4h']))
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5)))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb20_2_width_1h'] > 0.132)
