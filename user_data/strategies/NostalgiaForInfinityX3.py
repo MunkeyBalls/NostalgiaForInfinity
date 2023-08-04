@@ -52,11 +52,11 @@ warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 ##                                                                                                         ##
 ##  Binance: https://accounts.binance.com/en/register?ref=C68K26A9 (20% discount on trading fees)          ##
 ##  Kucoin: https://www.kucoin.com/r/af/QBSSS5J2 (20% lifetime discount on trading fees)                   ##
-##  Gate.io: https://www.gate.io/signup/UAARUlhf/20pct (20% discount on trading fees)                      ##
+##  Gate.io: https://www.gate.io/signup/UAARUlhf/20pct?ref_type=103 (20% discount on trading fees)         ##
 ##  OKX: https://www.okx.com/join/11749725931 (20% discount on trading fees)                               ##
 ##  MEXC: https://promote.mexc.com/a/nfi  (10% discount on trading fees)                                   ##
 ##  ByBit: https://partner.bybit.com/b/nfi                                                                 ##
-##  Huobi: https://www.huobi.com/en-us/v/register/double-invite/?inviter_id=11345710&invite_code=ubpt2223  ##
+##  Huobi: https://www.huobi.com/invite/en-us/1f?invite_code=ubpt2223                                      ##
 ##         (20% discount on trading fees)                                                                  ##
 ##  Bitvavo: https://account.bitvavo.com/create?a=D22103A4BC (no fees for the first € 1000)                ##
 #############################################################################################################
@@ -65,7 +65,7 @@ class NostalgiaForInfinityX3(IStrategy):
     INTERFACE_VERSION = 3
 
     def version(self) -> str:
-        return "v13.0.210"
+        return "v13.0.290"
 
     # ROI table:
     minimal_roi = {
@@ -113,7 +113,7 @@ class NostalgiaForInfinityX3(IStrategy):
     # Normal mode tags
     normal_mode_tags = ['force_entry', '1', '2', '3', '4', '5', '6', '7', '8', '9']
     # Pump mode tags
-    pump_mode_tags = ['21', '22']
+    pump_mode_tags = ['21', '22', '23']
     # Quick mode tags
     quick_mode_tags = ['41', '42', '43', '44']
     # Rebuy mode tags
@@ -146,7 +146,7 @@ class NostalgiaForInfinityX3(IStrategy):
     stake_grinding_mode_multiplier_alt_1 = 1.0
     stake_grinding_mode_multiplier_alt_2 = 1.0
     # Grinding stop thresholds
-    grinding_stop_init = -0.08
+    grinding_stop_init = -0.12
     grinding_stop_grinds = -0.16
     # Grinding take profit threshold
     grinding_profit_threshold = 0.016
@@ -191,6 +191,7 @@ class NostalgiaForInfinityX3(IStrategy):
 
         "buy_condition_21_enable": True,
         "buy_condition_22_enable": True,
+        "buy_condition_23_enable": True,
 
         "buy_condition_41_enable": True,
         "buy_condition_42_enable": True,
@@ -1344,9 +1345,9 @@ class NostalgiaForInfinityX3(IStrategy):
                             (profit_current_stake_ratio < (min(self.grinding_stop_init, grinding_thresholds[i]) if (count_of_entries == 1 and count_of_exits == 0) else grinding_thresholds[i]))
                             and
                             (
-                                (last_candle['close_max_12'] < (last_candle['close'] * 1.1))
-                                and (last_candle['close_max_24'] < (last_candle['close'] * 1.12))
-                                and (last_candle['close_max_48'] < (last_candle['close'] * 1.16))
+                                (last_candle['close_max_12'] < (last_candle['close'] * 1.12))
+                                and (last_candle['close_max_24'] < (last_candle['close'] * 1.18))
+                                and (last_candle['close_max_48'] < (last_candle['close'] * 1.24))
                                 and (last_candle['btc_pct_close_max_72_5m'] < 0.04)
                                 and (last_candle['btc_pct_close_max_24_5m'] < 0.03)
                             )
@@ -1366,31 +1367,31 @@ class NostalgiaForInfinityX3(IStrategy):
                                 (
                                     (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['r_14'] < -90.0)
-                                    and (last_candle['r_14'] > previous_candle['r_14'])
+                                    and (previous_candle['rsi_3'] > 16.0)
                                     and (last_candle['ema_26'] > last_candle['ema_12'])
-                                    and ((last_candle['ema_26'] - last_candle['ema_12']) > (last_candle['open'] * 0.014))
+                                    and ((last_candle['ema_26'] - last_candle['ema_12']) > (last_candle['open'] * 0.012))
                                     and ((previous_candle['ema_26'] - previous_candle['ema_12']) > (last_candle['open'] / 100.0))
-                                    and (last_candle['rsi_3_15m'] > 5.0)
-                                    and (last_candle['rsi_3_1h'] > 10.0)
+                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
                                     and (last_candle['rsi_3_4h'] > 20.0)
                                 )
                                 or
                                 (
                                     (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_14'] > previous_candle['rsi_14'])
-                                    and (last_candle['rsi_3'] > 5.0)
-                                    and (last_candle['rsi_3_15m'] > 25.0)
-                                    and (last_candle['rsi_14_15m'] < 32.0)
-                                    and (last_candle['cti_20_1h'] < 0.5)
-                                    and (last_candle['rsi_3_1h'] > 10.0)
+                                    and (previous_candle['rsi_3'] > 16.0)
+                                    and (last_candle['rsi_3_15m'] > 26.0)
+                                    and (last_candle['cti_20_1h'] < 0.7)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
                                     and (last_candle['rsi_3_4h'] > 20.0)
+                                    and (last_candle['ema_200_dec_24'] == False)
                                 )
                                 or
                                 (
                                     (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_3'] > 8.0)
                                     and (last_candle['close'] < (last_candle['bb20_2_low'] * 1.0))
-                                    and (last_candle['ema_12'] < (last_candle['ema_26'] * 0.996))
+                                    and (last_candle['ema_12'] < (last_candle['ema_26'] * 0.992))
                                     and (last_candle['rsi_3_15m'] > 26.0)
                                     and (last_candle['cti_20_1h'] < 0.5)
                                     and (last_candle['rsi_3_1h'] > 25.0)
@@ -1399,19 +1400,21 @@ class NostalgiaForInfinityX3(IStrategy):
                                 )
                                 or
                                 (
-                                    (last_candle['rsi_14'] < 33.0)
+                                    (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_3'] > 26.0)
                                     and (last_candle['ha_close'] > last_candle['ha_open'])
-                                    and (last_candle['ema_12'] < (last_candle['ema_26'] * 0.998))
-                                    and (last_candle['rsi_3_15m'] > 10.0)
-                                    and (last_candle['cti_20_1h'] < 0.7)
-                                    and (last_candle['rsi_3_1h'] > 20.0)
-                                    and (last_candle['rsi_3_4h'] > 25.0)
+                                    and (last_candle['rsi_3_15m'] > 26.0)
+                                    and (last_candle['cti_20_1h'] < 0.8)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['cti_20_4h'] < 0.8)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                    and (last_candle['ema_200_dec_24'] == False)
+                                    and (last_candle['ema_200_dec_24_15m'] == False)
+                                    and (last_candle['ema_200_dec_48_1h'] == False)
                                 )
                                 or
                                 (
-                                    (last_candle['rsi_14'] < 46.0)
-                                    and (last_candle['cti_20'] < -0.5)
+                                    (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_3'] > 5.0)
                                     and (last_candle['tsi'] < -20.0)
                                     and (last_candle['tsi'] > last_candle['tsi_signal'])
@@ -1423,22 +1426,25 @@ class NostalgiaForInfinityX3(IStrategy):
                                 or
                                 (
                                     (last_candle['rsi_14'] < 36.0)
-                                    and (last_candle['rsi_3'] > 5.0)
+                                    and (last_candle['rsi_3'] > 10.0)
                                     and (last_candle['high_max_6_1h'] > (last_candle['close'] * 1.10))
                                     and (last_candle['rsi_14'] > previous_candle['rsi_14'])
                                     and (last_candle['rsi_3_15m'] > 16.0)
-                                    and (last_candle['cti_20_1h'] < 0.7)
+                                    and (last_candle['cti_20_1h'] < 0.5)
                                     and (last_candle['rsi_3_1h'] > 30.0)
                                     and (last_candle['rsi_3_4h'] > 30.0)
                                 )
                                 or
                                 (
                                     (last_candle['rsi_14'] < 36.0)
-                                    and (last_candle['close'] > (last_candle['sar'] * 1.005))
+                                    and (last_candle['close'] > (last_candle['sar'] * 1.000))
                                     and (previous_candle['close'] < previous_candle['sar'])
-                                    and (last_candle['rsi_3_15m'] > 20.0)
-                                    and (last_candle['rsi_3_1h'] > 20.0)
-                                    and (last_candle['rsi_3_4h'] > 20.0)
+                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['cti_20_1h'] < 0.85)
+                                    and (last_candle['rsi_3_1h'] > 10.0)
+                                    and (last_candle['rsi_3_4h'] > 10.0)
+                                    and (last_candle['ema_200_dec_24'] == False)
+                                    and (last_candle['ema_200_dec_24_15m'] == False)
                                 )
                                 or
                                 (
@@ -1447,10 +1453,11 @@ class NostalgiaForInfinityX3(IStrategy):
                                     and (last_candle['rsi_3'] > 5.0)
                                     and (last_candle['cci_20'] < -160.0)
                                     and (last_candle['cci_20'] > previous_candle['cci_20'])
-                                    and (last_candle['rsi_3_15m'] > 20.0)
+                                    and (last_candle['ema_12'] < (last_candle['ema_26'] * 0.998))
+                                    and (last_candle['rsi_3_15m'] > 26.0)
                                     and (last_candle['cti_20_1h'] < 0.5)
-                                    and (last_candle['rsi_3_1h'] > 16.0)
-                                    and (last_candle['rsi_3_4h'] > 5.0)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
                                 )
                                 or
                                 (
@@ -1460,93 +1467,142 @@ class NostalgiaForInfinityX3(IStrategy):
                                     and (last_candle['ema_26_15m'] > last_candle['ema_12_15m'])
                                     and ((last_candle['ema_26_15m'] - last_candle['ema_12_15m']) > (last_candle['open_15m'] * 0.012))
                                     and ((previous_candle['ema_26_15m'] - previous_candle['ema_12_15m']) > (last_candle['open_15m'] / 100.0))
-                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['rsi_3_15m'] > 10.0)
+                                    and (last_candle['cti_20_1h'] < 0.8)
                                     and (last_candle['rsi_3_1h'] > 30.0)
-                                    and (last_candle['rsi_3_4h'] > 5.0)
+                                    and (last_candle['rsi_3_4h'] > 30.0)
                                 )
                                 or
                                 (
-                                    (last_candle['rsi_14'] < 36.0)
-                                    and (last_candle['rsi_3'] > 16.0)
-                                    and (last_candle['rsi_14_15m'] < 36.0)
+                                    (last_candle['rsi_14'] < 46.0)
+                                    and (last_candle['rsi_14_15m'] < 34.0)
                                     and (last_candle['rsi_14_15m'] > previous_candle['rsi_14_15m'])
+                                    and (last_candle['rsi_3_15m'] > 20.0)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                )
+                                or
+                                (
+                                    (last_candle['rsi_14'] < 34.0)
+                                    and (previous_candle['rsi_3_15m'] > 20.0)
+                                    and (last_candle['rsi_14_15m'] < 40.0)
+                                    and (last_candle['rsi_14_15m'] > previous_candle['rsi_14_15m'])
+                                    and (last_candle['ema_12_15m'] < (last_candle['ema_26_15m'] * 0.998))
                                     and (last_candle['rsi_3_15m'] > 10.0)
                                     and (last_candle['cti_20_1h'] < 0.5)
                                     and (last_candle['rsi_3_1h'] > 20.0)
                                     and (last_candle['rsi_3_4h'] > 20.0)
-                                )
-                                or
-                                (
-                                    (last_candle['rsi_14'] < 36.0)
-                                    and (previous_candle['rsi_3_15m'] > 20.0)
-                                    and (last_candle['rsi_14_15m'] < 46.0)
-                                    and (last_candle['rsi_14_15m'] > previous_candle['rsi_14_15m'])
-                                    and (last_candle['ema_12_15m'] < (last_candle['ema_26_15m'] * 0.998))
-                                    and (last_candle['rsi_3_15m'] > 26.0)
-                                    and (last_candle['cti_20_1h'] < 0.5)
-                                    and (last_candle['rsi_3_1h'] > 20.0)
-                                    and (last_candle['rsi_3_4h'] > 5.0)
                                 )
                                 or
                                 (
                                     (last_candle['close'] > (last_candle['low_min_3_1h'] * 1.04))
                                     and (last_candle['close'] > (last_candle['low_min_12_1h'] * 1.08))
-                                    and (last_candle['close'] > (last_candle['low_min_24_1h'] * 1.10))
+                                    and (last_candle['close'] > (last_candle['low_min_24_1h'] * 1.18))
                                     and (previous_candle['rsi_3'] > 16.0)
                                     and (last_candle['rsi_14'] < 46.0)
                                     and (last_candle['ha_close'] > last_candle['ha_open'])
                                     and (last_candle['rsi_3_15m'] > 10.0)
-                                    and (last_candle['cti_20_1h'] < 0.8)
                                     and (last_candle['rsi_3_1h'] > 20.0)
                                     and (last_candle['rsi_3_4h'] > 5.0)
-                                    and (last_candle['rsi_14_4h'] < 70.0)
+                                    and (last_candle['rsi_14_4h'] < 66.0)
                                     and (last_candle['ema_200_dec_48_1h'] == False)
                                 )
                                 or
                                 (
-                                    (last_candle['rsi_14'] < 60.0)
-                                    and (previous_candle['rsi_3'] > 16.0)
+                                    (last_candle['rsi_14'] < 40.0)
                                     and (last_candle['ewo_50_200'] > 2.4)
                                     and (last_candle['rsi_14'] > previous_candle['rsi_14'])
-                                    and (last_candle['close'] < (last_candle['ema_12'] * 0.988))
-                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['close'] < (last_candle['ema_12'] * 0.998))
+                                    and (last_candle['rsi_3_15m'] > 10.0)
                                     and (last_candle['cti_20_1h'] < 0.8)
-                                    and (last_candle['rsi_3_1h'] > 20.0)
-                                    and (last_candle['rsi_3_4h'] > 20.0)
-                                    and (last_candle['rsi_14_4h'] < 70.0)
+                                    and (last_candle['rsi_3_1h'] > 16.0)
+                                    and (last_candle['rsi_3_4h'] > 16.0)
+                                    and (last_candle['rsi_14_4h'] < 66.0)
                                     and (last_candle['ema_200_dec_24'] == False)
                                     and (last_candle['ema_200_dec_24_15m'] == False)
                                     and (last_candle['ema_200_dec_48_1h'] == False)
                                 )
                                 or
                                 (
-                                    (last_candle['rsi_14'] < 38.0)
+                                    (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_3'] > 10.0)
                                     and (last_candle['rsi_3'] < 36.0)
-                                    and (last_candle['ewo_50_200'] > 2.2)
+                                    and (last_candle['ewo_50_200'] > 2.8)
                                     and (last_candle['close'] < (last_candle['ema_12'] * 1.014))
                                     and (last_candle['close'] < (last_candle['ema_16'] * 0.976))
+                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['cti_20_1h'] < 0.8)
+                                    and (last_candle['rsi_3_1h'] > 16.0)
+                                    and (last_candle['rsi_3_4h'] > 16.0)
+                                )
+                                or
+                                (
+                                    (last_candle['close'] > (last_candle['close_min_12'] * 1.030))
+                                    and (previous_candle['rsi_3'] > 10.0)
+                                    and (last_candle['rsi_14'] < 46.0)
                                     and (last_candle['rsi_3_15m'] > 16.0)
                                     and (last_candle['rsi_3_1h'] > 20.0)
                                     and (last_candle['rsi_3_4h'] > 20.0)
                                 )
                                 or
                                 (
-                                    (last_candle['close'] > (last_candle['close_min_12'] * 1.016))
-                                    and (previous_candle['rsi_3'] > 16.0)
+                                    (last_candle['rsi_14'] < 36.0)
+                                    and (last_candle['rsi_3'] > 14.0)
+                                    and (last_candle['close'] < (last_candle['ema_26'] * 0.968))
+                                    and (last_candle['rsi_3_15m'] > 26.0)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['cti_20_4h'] < 0.8)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                )
+                                or
+                                (
+                                    (last_candle['high_max_24_1h'] < (last_candle['close'] * 1.18))
+                                    and (last_candle['high_max_12_1h'] < (last_candle['close'] * 1.14))
+                                    and (last_candle['close_max_12'] < (last_candle['close'] * 1.06))
+                                    and (last_candle['rsi_3'] > 26.0)
                                     and (last_candle['rsi_14'] < 36.0)
-                                    and (last_candle['rsi_3_15m'] > 16.0)
-                                    and (last_candle['rsi_3_1h'] > 10.0)
-                                    and (last_candle['rsi_3_4h'] > 5.0)
+                                    and (last_candle['rsi_14'] > previous_candle['rsi_14'])
+                                    and (last_candle['ha_close'] > last_candle['ha_open'])
+                                    and (last_candle['ema_12'] < (last_candle['ema_26'] * 0.996))
+                                    and (last_candle['rsi_3_15m'] > 26.0)
+                                    and (last_candle['cti_20_1h'] < 0.8)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                )
+                                or
+                                (
+                                    (last_candle['close'] > (last_candle['close_min_12'] * 1.04))
+                                    and (last_candle['close'] > (last_candle['close_min_24'] * 1.08))
+                                    and (previous_candle['close'] < previous_candle['ema_200'])
+                                    and (last_candle['close'] > last_candle['ema_200'])
+                                    and (last_candle['rsi_14'] < 60.0)
+                                    and (last_candle['ema_200_dec_24_15m'] == False)
+                                    and (last_candle['ema_200_dec_48_1h'] == False)
                                 )
                                 or
                                 (
                                     (last_candle['rsi_14'] < 36.0)
-                                    and (last_candle['rsi_3'] > 10.0)
-                                    and (last_candle['close'] < (last_candle['ema_26'] * 0.976))
-                                    and (last_candle['rsi_3_15m'] > 20.0)
+                                    and (last_candle['rsi_3'] > 20.0)
+                                    and (last_candle['close'] > (last_candle['ema_200'] * 1.0))
+                                    and (last_candle['close'] < (last_candle['ema_200'] * 1.05))
+                                    and (last_candle['rsi_3_15m'] > 26.0)
+                                    and (last_candle['cti_20_1h'] < 0.8)
                                     and (last_candle['rsi_3_1h'] > 26.0)
-                                    and (last_candle['rsi_3_4h'] > 10.0)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                    and (last_candle['ema_200_dec_24_15m'] == False)
+                                    and (last_candle['ema_200_dec_48_1h'] == False)
+                                )
+                                or
+                                (
+                                    (last_candle['rsi_14'] < 30.0)
+                                    and (last_candle['rsi_3'] > 12.0)
+                                    and (last_candle['rsi_14'] > previous_candle['rsi_14'])
+                                    and (last_candle['rsi_3_15m'] > 12.0)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['cti_20_4h'] < 0.8)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
+                                    and (last_candle['ema_200_dec_24_15m'] == False)
+                                    and (last_candle['ema_200_dec_48_1h'] == False)
                                 )
                                 or
                                 (
@@ -1555,10 +1611,40 @@ class NostalgiaForInfinityX3(IStrategy):
                                     and (previous_candle['rsi_3'] > 16.0)
                                     and (last_candle['rsi_14'] < 36.0)
                                     and (last_candle['rsi_14'] > previous_candle['rsi_14'])
-                                    and (last_candle['rsi_3'] > 5.0)
+                                    and (last_candle['ha_close'] > last_candle['ha_open'])
+                                    and (last_candle['rsi_3'] > 10.0)
                                     and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['cti_20_1h'] < 0.5)
                                     and (last_candle['rsi_3_1h'] > 30.0)
                                     and (last_candle['rsi_3_4h'] > 30.0)
+                                )
+                                or
+                                (
+                                    (count_of_exits > 0)
+                                    and (slice_profit_entry < -0.08)
+                                    and (previous_candle['rsi_3'] > 16.0)
+                                    and (last_candle['rsi_14'] < 46.0)
+                                    and (last_candle['rsi_3'] > 16.0)
+                                    and (last_candle['close'] > (last_candle['sar'] * 1.000))
+                                    and (previous_candle['close'] < previous_candle['sar'])
+                                    and (last_candle['rsi_3_15m'] > 16.0)
+                                    and (last_candle['cti_20_1h'] < 0.5)
+                                    and (last_candle['rsi_3_1h'] > 30.0)
+                                    and (last_candle['rsi_3_4h'] > 30.0)
+                                )
+                                or
+                                (
+                                    (count_of_exits > 0)
+                                    and (slice_profit_entry < -0.04)
+                                    and (previous_candle['rsi_3'] > 10.0)
+                                    and (last_candle['rsi_14'] < 36.0)
+                                    and (last_candle['rsi_3'] > 10.0)
+                                    and (last_candle['rsi_14'] > previous_candle['rsi_14'])
+                                    and (last_candle['rsi_3_15m'] > 10.0)
+                                    and (last_candle['cti_20_1h'] < -0.5)
+                                    and (last_candle['rsi_3_1h'] > 26.0)
+                                    and (last_candle['cti_20_4h'] < -0.5)
+                                    and (last_candle['rsi_3_4h'] > 26.0)
                                 )
                             )
                     ):
@@ -1688,7 +1774,10 @@ class NostalgiaForInfinityX3(IStrategy):
         if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP']:
             btc_info_pair = f"BTC/{self.config['stake_currency']}"
         else:
-            btc_info_pair = "BTC/USDT"
+            if ('trading_mode' in self.config) and (self.config['trading_mode'] in ['futures', 'margin']):
+                btc_info_pair = "BTC/USDT:USDT"
+            else:
+                btc_info_pair = "BTC/USDT"
 
         informative_pairs.extend([(btc_info_pair, btc_info_timeframe) for btc_info_timeframe in self.btc_info_timeframes])
 
@@ -1951,6 +2040,9 @@ class NostalgiaForInfinityX3(IStrategy):
         # CTI
         informative_15m['cti_20'] = pta.cti(informative_15m["close"], length=20)
 
+        # EWO
+        informative_15m['ewo_50_200'] = ewo(informative_15m, 50, 200)
+
         # Downtrend check
         informative_15m['not_downtrend'] = ((informative_15m['close'] > informative_15m['open']) | (informative_15m['close'].shift(1) > informative_15m['open'].shift(1)) | (informative_15m['close'].shift(2) > informative_15m['open'].shift(2)) | (informative_15m['rsi_14'] > 50.0) | (informative_15m['rsi_3'] > 25.0))
 
@@ -2043,6 +2135,7 @@ class NostalgiaForInfinityX3(IStrategy):
 
         # Close min
         dataframe['close_min_12'] = dataframe['close'].rolling(12).min()
+        dataframe['close_min_24'] = dataframe['close'].rolling(24).min()
 
         # Close delta
         dataframe['close_delta'] = (dataframe['close'] - dataframe['close'].shift()).abs()
@@ -2226,7 +2319,10 @@ class NostalgiaForInfinityX3(IStrategy):
         if self.config['stake_currency'] in ['USDT','BUSD','USDC','DAI','TUSD','PAX','USD','EUR','GBP']:
             btc_info_pair = f"BTC/{self.config['stake_currency']}"
         else:
-            btc_info_pair = "BTC/USDT"
+            if ('trading_mode' in self.config) and (self.config['trading_mode'] in ['futures', 'margin']):
+                btc_info_pair = "BTC/USDT:USDT"
+            else:
+                btc_info_pair = "BTC/USDT"
 
         for btc_info_timeframe in self.btc_info_timeframes:
             btc_informative = self.btc_info_switcher(btc_info_pair, btc_info_timeframe, metadata)
@@ -2281,6 +2377,229 @@ class NostalgiaForInfinityX3(IStrategy):
         is_btc_stake = self.config['stake_currency'] in self.btc_stakes
         allowed_empty_candles = 144 if is_btc_stake else 60
 
+        # Global protections
+        protections_global = [
+            # current 4h red with top wick, previous 4h red, 4h overbought
+            (
+                (dataframe['change_pct_4h'] > -0.04)
+                | (dataframe['top_wick_pct_4h'] < 0.04)
+                | (dataframe['change_pct_4h'].shift(48) > -0.04)
+                | (dataframe['cti_20_4h'] < 0.8)
+            )
+            &
+            # current 1h red, current 4h green, 4h overbought
+            (
+                (dataframe['change_pct_1h'] > -0.04)
+                | (dataframe['change_pct_4h'] < 0.08)
+                | (dataframe['cti_20_4h'] < 0.5)
+                | (dataframe['rsi_14_4h'] < 70.0)
+            )
+            &
+            # current 4h red, previous 4h green, 4h overbought
+            (
+                (dataframe['change_pct_4h'] > -0.04)
+                | (dataframe['change_pct_4h'].shift(48) < 0.04)
+                | (dataframe['cti_20_4h'] < 0.5)
+                | (dataframe['rsi_14_4h'] < 70.0)
+            )
+            &
+            # current 4h red, previous 4h red, 2nd previous 4h long green, 4h overbought
+            (
+                (dataframe['change_pct_4h'] > -0.04)
+                | (dataframe['change_pct_4h'].shift(48) > -0.04)
+                | (dataframe['change_pct_4h'].shift(96) < 0.16)
+                | (dataframe['cti_20_4h'] < 0.5)
+            )
+            &
+            # current 4h red, overbought 4h, sudden rise 4h (and now coming down)
+            (
+                (dataframe['change_pct_4h'] > -0.01)
+                | (dataframe['rsi_14_max_6_4h'] < 80.0)
+                | (dataframe['cti_20_4h'] < 0.5)
+                | (((dataframe['ema_12_4h'] - dataframe['ema_26_4h']) / dataframe['ema_26_4h']) < 0.08)
+            )
+            # current 4h red, previous 4h green with top wick, 4h overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.01)
+                | (dataframe['change_pct_4h'].shift(48) < 0.08)
+                | (dataframe['top_wick_pct_4h'].shift(48) < 0.08)
+                | (dataframe['cti_20_4h'] < 0.5)
+            )
+            # current 4h long red, previous 4h red, 2nd previous 4h long green, 4h overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.08)
+                | (dataframe['change_pct_4h'].shift(48) > -0.01)
+                | (dataframe['change_pct_4h'].shift(96) < 0.08)
+                | (dataframe['cti_20_4h'] < 0.5)
+            )
+            # current 1h red, current 4h long green with top wick, 1h overbought
+            &
+            (
+                (dataframe['change_pct_1h'] > -0.01)
+                | (dataframe['change_pct_4h'] < 0.08)
+                | (dataframe['top_wick_pct_4h'] < 0.04)
+                | (dataframe['cti_20_1h'] < 0.7)
+            )
+            # current 1h red, 1h overbought, 1d overbought, 1h descending
+            &
+            (
+                (dataframe['change_pct_1h'] > -0.04)
+                | (dataframe['cti_20_1h'] < 0.7)
+                | (dataframe['cti_20_1d'] < 0.8)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+            )
+            # 1h overbought, 1d overbought, 1h descending
+            &
+            (
+                (dataframe['rsi_14_1h'] < 70.0)
+                | (dataframe['cti_20_1h'] < 0.7)
+                | (dataframe['cti_20_1d'] < 0.8)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+            )
+            # current 1d green, 4h overbought, 4h descending
+            &
+            (
+                (dataframe['change_pct_1d'] < 0.08)
+                | (dataframe['rsi_14_4h'] < 70.0)
+                | (dataframe['cti_20_4h'] < 0.5)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+            )
+            # current 4h red, previous 4h green, 1d overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.04)
+                | (dataframe['change_pct_4h'].shift(48) < 0.04)
+                | (dataframe['rsi_14_1d'] < 70.0)
+                | (dataframe['cti_20_1d'] < 0.5)
+            )
+            # 1h overbought, 4h overbought, 1d overbought
+            &
+            (
+                (dataframe['r_480_1h'] < -20.0)
+                | (dataframe['r_480_4h'] < -20.0)
+                | (dataframe['rsi_14_1d'] < 80.0)
+                | (dataframe['cti_20_1d'] < 0.85)
+            )
+            # current 4h red, previous 4h red, 2nd previous 4h green with top wick, 4h overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.0)
+                | (dataframe['change_pct_4h'].shift(48) > -0.0)
+                | (dataframe['change_pct_4h'].shift(96) < 0.06)
+                | (dataframe['top_wick_pct_4h'].shift(96) < 0.06)
+                | (dataframe['cti_20_4h'] < 0.7)
+            )
+            # current 4h red, previous 4h red, 2nd previous 4h green, 4h overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.0)
+                | (dataframe['change_pct_4h'].shift(48) > -0.0)
+                | (dataframe['change_pct_4h'].shift(96) < 0.06)
+                | (dataframe['not_downtrend_1h'])
+                | (dataframe['cti_20_4h'] < 0.5)
+            )
+            # current 1d green with top wick, current & previous 4h red, 4h overbought
+            &
+            (
+                (dataframe['change_pct_1d'] < 0.08)
+                | (dataframe['top_wick_pct_1d'] < 0.08)
+                | (dataframe['change_pct_4h'] > -0.0)
+                | (dataframe['change_pct_4h'].shift(48) > -0.0)
+                | (dataframe['cti_20_4h'] < 0.7)
+            )
+            # current 1h red, 1h downtrend, 15m move down, 1h move down, 1h downtrend, 4h downtrend
+            &
+            (
+                (dataframe['change_pct_1h'] > -0.01)
+                | (dataframe['not_downtrend_1h'])
+                | (dataframe['rsi_3_15m'] > 16.0)
+                | (dataframe['rsi_3_1h'] > 16.0)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+            )
+            # 4h downtrend, 4h move down, 1d overbought
+            &
+            (
+                (dataframe['is_downtrend_3_4h'] == False)
+                | (dataframe['not_downtrend_4h'])
+                | (dataframe['rsi_3_4h'] > 16.0)
+                | (dataframe['cti_20_1d'] < 0.7)
+            )
+            # 4h red with top wick, 1h downtrend, 1d overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.04)
+                | (dataframe['top_wick_pct_4h'] < 0.04)
+                | (dataframe['is_downtrend_3_1h'] == False)
+                | (dataframe['rsi_14_1d'] < 70.0)
+            )
+            # current 1h red, previous 1h red, 4h overbought
+            &
+            (
+                (dataframe['change_pct_1h'] > -0.01)
+                | (dataframe['change_pct_1h'].shift(12) > -0.01)
+                | (dataframe['cti_20_4h'] < 0.7)
+                | (dataframe['rsi_14_max_6_4h'] < 70.0)
+            )
+            # current 1d long green, current 4h red, 1h high, 4h high, 1h downtrend, 4h downtrend
+            &
+            (
+                (dataframe['change_pct_1d'] < 0.16)
+                | (dataframe['change_pct_4h'] > -0.0)
+                | (dataframe['rsi_14_1h'] < 46.0)
+                | (dataframe['rsi_14_4h'] < 46.0)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+            )
+            # current 4h red, previous 4h red, 2nd previous 4h green with top wick, 4h overbought
+            &
+            (
+                (dataframe['change_pct_4h'] > -0.01)
+                | (dataframe['change_pct_4h'].shift(48) > -0.01)
+                | (dataframe['change_pct_4h'].shift(96) < 0.04)
+                | (dataframe['top_wick_pct_4h'].shift(96) < 0.04)
+                | (dataframe['cti_20_4h'] < 0.5)
+                | (dataframe['rsi_14_max_6_4h'] < 70.0)
+            )
+            # 5m & 15m strond down move, 1h & 4h still high, 4h & 1d downtrend
+            &
+            (
+                (dataframe['rsi_3'] > 10.0)
+                | (dataframe['rsi_3_15m'] > 10.0)
+                | (dataframe['cti_20_15m'] < -0.8)
+                | (dataframe['cti_20_1h'] < -0.0)
+                | (dataframe['cti_20_4h'] < -0.0)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+                | (dataframe['ema_200_dec_4_1d'] == False)
+            )
+            # 15m downtrend, 5m & 15m strong down move, 1h & 4h downtrend
+            &
+            (
+                (dataframe['not_downtrend_15m'])
+                | (dataframe['rsi_3'] > 4.0)
+                | (dataframe['rsi_3_15m'] > 4.0)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+            )
+            # 4h strong down move, 1h & 4h downtrend
+            &
+            (
+                (dataframe['rsi_3_4h'] > 4.0)
+                | (dataframe['ema_200_dec_48_1h'] == False)
+                | (dataframe['ema_200_dec_24_4h'] == False)
+            )
+            # 1h downtrend, 1h strong down move, 1d overbought
+            &
+            (
+                (dataframe['not_downtrend_1h'])
+                | (dataframe['rsi_3_1h'] > 10.0)
+                | (dataframe['rsi_14_1d'] < 70.0)
+                | (dataframe['cti_20_1d'] < 0.8)
+            )
+        ]
+
         for buy_enable in self.buy_params:
             index = int(buy_enable.split('_')[2])
             item_buy_protection_list = [True]
@@ -2290,6 +2609,7 @@ class NostalgiaForInfinityX3(IStrategy):
                 # -----------------------------------------------------------------------------------------
                 item_buy_logic = []
                 item_buy_logic.append(reduce(lambda x, y: x & y, item_buy_protection_list))
+                item_buy_logic.append(reduce(lambda x, y: x & y, protections_global))
 
                 # Condition #1 - Long mode bull. Uptrend.
                 if index == 1:
@@ -3357,6 +3677,8 @@ class NostalgiaForInfinityX3(IStrategy):
                                           | (dataframe['ema_200_dec_48_1h'] == False)
                                           | (dataframe['ema_200_dec_24_4h'] == False)
                                           | (dataframe['ema_200_dec_4_1d'] == False))
+                    item_buy_logic.append((dataframe['change_pct_1d'] > -0.02)
+                                          | (dataframe['cti_20_1h'] < 0.7))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.06))
@@ -6188,6 +6510,11 @@ class NostalgiaForInfinityX3(IStrategy):
                                           | (dataframe['ema_200_dec_24_4h'] == False)
                                           | (dataframe['ema_200_dec_4_1d'] == False)
                                           | (dataframe['close'] < (dataframe['ema_26'] * 0.93)))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3'] > 5.0)
+                                          | (dataframe['rsi_3_15m'] > 16.0)
+                                          | (dataframe['rsi_3_1h'] > 26.0)
+                                          | (dataframe['close'] < (dataframe['ema_26'] * 0.90)))
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_26'] * 0.94))
@@ -6367,6 +6694,11 @@ class NostalgiaForInfinityX3(IStrategy):
                                           | (dataframe['cti_20_1h'] < -0.5)
                                           | (dataframe['cti_20_4h'] < -0.5)
                                           | (dataframe['rsi_14'] > dataframe['rsi_14'].shift(1).rolling(6).min()))
+                    item_buy_logic.append((dataframe['rsi_3'] > 10.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['ema_200_dec_24_15m'] == False)
+                                          | (dataframe['ema_200_dec_48_1h'] == False)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
 
                     # Logic
                     item_buy_logic.append(dataframe['close'] < (dataframe['ema_16'] * 0.974))
@@ -8192,6 +8524,68 @@ class NostalgiaForInfinityX3(IStrategy):
                     item_buy_logic.append(dataframe['cti_20'] < -0.9)
                     item_buy_logic.append(dataframe['rsi_14'] < 50.0)
 
+                # Condition #23 - Pump mode.
+                if index == 23:
+                    # Protections
+                    item_buy_logic.append(dataframe['btc_pct_close_max_24_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['btc_pct_close_max_72_5m'] < 0.03)
+                    item_buy_logic.append(dataframe['close_max_12'] < (dataframe['close'] * 1.2))
+                    item_buy_logic.append(dataframe['close_max_24'] < (dataframe['close'] * 1.24))
+                    item_buy_logic.append(dataframe['close_max_48'] < (dataframe['close'] * 1.3))
+                    item_buy_logic.append(dataframe['high_max_24_1h'] < (dataframe['close'] * 1.4))
+                    item_buy_logic.append(dataframe['high_max_24_4h'] < (dataframe['close'] * 1.5))
+                    item_buy_logic.append(dataframe['num_empty_288'] < allowed_empty_candles)
+
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['rsi_3_15m'] > 12.0)
+                                          | (dataframe['rsi_3_1h'] > 12.0)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.0)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.02)
+                                          | (dataframe['cti_20_4h'] < 0.8))
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.02)
+                                          | (dataframe['change_pct_4h'] > -0.02)
+                                          | (dataframe['change_pct_4h'].shift(48) < 0.02)
+                                          | (dataframe['cti_20_1h'] < 0.8))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.0)
+                                          | (dataframe['top_wick_pct_4h'] < (abs(dataframe['change_pct_4h']) * 6.0)))
+                    item_buy_logic.append((dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.8)
+                                          | (dataframe['rsi_14_1d'] < 80.0)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.08)
+                                          | (dataframe['not_downtrend_1h'])
+                                          | (dataframe['cti_20_4h'] < 0.7)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.02)
+                                          | (dataframe['rsi_3_1h'] > 10.0)
+                                          | (dataframe['cti_20_4h'] < 0.7)
+                                          | (dataframe['ema_200_dec_24_4h'] == False))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['cti_20_4h'] < 0.7)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
+                    item_buy_logic.append((dataframe['change_pct_1h'] > -0.0)
+                                          | (dataframe['rsi_3_15m'] > 6.0)
+                                          | (dataframe['cti_20_1h'] < 0.5)
+                                          | (dataframe['ema_200_dec_24_4h'] == False))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.0)
+                                          | (dataframe['rsi_3_15m'] > 5.0)
+                                          | (dataframe['cti_20_4h'] < 0.7)
+                                          | (dataframe['ema_200_dec_24_4h'] == False))
+                    item_buy_logic.append((dataframe['rsi_3_15m'] > 20.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['cti_20_1d'] < 0.7)
+                                          | (((dataframe['ema_12_4h'] - dataframe['ema_26_4h']) / dataframe['ema_26_4h']) < 0.08)
+                                          | (dataframe['ema_200_dec_4_1d'] == False))
+
+                    # Logic
+                    item_buy_logic.append(dataframe['ewo_50_200_15m'] > 4.2)
+                    item_buy_logic.append(dataframe['rsi_14_15m'].shift(1) < 30.0)
+                    item_buy_logic.append(dataframe['rsi_14_15m'] < 30.0)
+                    item_buy_logic.append(dataframe['rsi_14'] < 35.0)
+                    item_buy_logic.append(dataframe['close'] < (dataframe['ema_26_15m'] * 0.964))
+
                 # Condition #41 - Quick mode bull.
                 if index == 41:
                     # Protections
@@ -9033,6 +9427,13 @@ class NostalgiaForInfinityX3(IStrategy):
                                           | (dataframe['cti_20_4h'] < -0.5)
                                           | (dataframe['rsi_14_4h'] < 40.0)
                                           | (dataframe['cti_20_1d'] < 0.5))
+                    item_buy_logic.append((dataframe['change_pct_4h'] > -0.03)
+                                          | (dataframe['cti_20_1h'] < -0.5)
+                                          | (dataframe['cti_20_4h'] < 0.7))
+                    item_buy_logic.append((dataframe['rsi_14_15m'] < 30.0)
+                                          | (dataframe['cti_20_4h'] < 0.5)
+                                          | (dataframe['ema_200_dec_24_4h'] == False)
+                                          | (dataframe['high_max_24_4h'] < (dataframe['close'] * 1.3)))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb40_2_delta'].gt(dataframe['close'] * 0.036))
@@ -10733,6 +11134,12 @@ class NostalgiaForInfinityX3(IStrategy):
                                           | (dataframe['not_downtrend_4h'])
                                           | (dataframe['rsi_3_15m'] > 30.0)
                                           | (dataframe['rsi_3_1h'] > 20.0))
+                    item_buy_logic.append((dataframe['not_downtrend_1h'])
+                                          | (dataframe['not_downtrend_4h'])
+                                          | (dataframe['rsi_3_1h'] > 6.0)
+                                          | (dataframe['rsi_3_4h'] > 16.0)
+                                          | (dataframe['ema_200_dec_48_1h'] == False)
+                                          | (dataframe['ema_200_dec_24_4h'] == False))
 
                     # Logic
                     item_buy_logic.append(dataframe['bb20_2_width_1h'] > 0.132)
